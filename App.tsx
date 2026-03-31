@@ -8,6 +8,8 @@ import TrackingScreen from './src/screens/TrackingScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { COLORS } from './src/services/api';
+import { GPS } from './src/services/gps';
+import { NotificationService } from './src/services/notifications';
 
 type Tab = 'home' | 'tracking' | 'history';
 
@@ -17,7 +19,16 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('home');
   const [showSettings, setShowSettings] = useState(false);
 
-  const loadUser = async () => { const u = await Storage.getUser(); setUser(u); setLoading(false); if (u) GPS.start(); };
+  const loadUser = async () => {
+    const u = await Storage.getUser();
+    setUser(u);
+    setLoading(false);
+    if (u) {
+      GPS.start();
+      NotificationService.requestPermission();
+    }
+  };
+
   useEffect(() => { loadUser(); }, []);
 
   if (loading) return (

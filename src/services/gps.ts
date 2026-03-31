@@ -2,6 +2,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Storage } from './storage';
 import { ZONES, API } from './api';
+import { NotificationService } from './notifications';
 
 const TASK_NAME = 'nofine-background-location';
 
@@ -47,6 +48,8 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }: any) => {
           paid: false,
         });
         await Storage.saveCharges(charges);
+        await NotificationService.zoneEntry(zone.name, zone.fee, result.deadline);
+        await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, result.deadline);
       } catch (e) {
         console.log('Zone entry error:', e);
       }

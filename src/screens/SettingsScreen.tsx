@@ -75,6 +75,7 @@ export default function SettingsScreen({ user, onClose, onReset }: { user: UserD
           <TouchableOpacity onPress={reset}><Text style={{ color: COLORS.red, fontWeight: '600', fontSize: 14 }}>Reset & Start Over</Text></TouchableOpacity>
         </View>
         <TouchableOpacity onPress={async () => { const user = await Storage.getUser(); if (!user) return; const charges = await Storage.getCharges(); charges.push({ id: Date.now().toString(), zoneId: "luton", zoneName: "Luton Airport", plate: user.plate, enteredAt: new Date().toISOString(), fee: 7, penaltyFee: 95, deadline: new Date(Date.now() + 86400000).toISOString(), payUrl: "https://www.london-luton.co.uk", paid: false }); await Storage.saveCharges(charges); Alert.alert("Test", "Luton zone entry simulated!"); }}><Text style={{ color: COLORS.blue, textAlign: "center", padding: 12 }}>🧪 Simulate Luton Entry</Text></TouchableOpacity>
+<TouchableOpacity onPress={async () => { const { NotificationService } = require('../services/notifications'); await NotificationService.requestPermission(); await NotificationService.zoneEntry('Luton Airport', 7, new Date(Date.now() + 86400000).toISOString()); Alert.alert('Sent!', 'Check your notifications'); }} style={{ padding: 12 }}><Text style={{ color: COLORS.blue, textAlign: 'center' }}>🔔 Test Notification</Text></TouchableOpacity>
 <Text style={s.version}>NoFine v2.0</Text>
       </ScrollView>
     </SafeAreaView>
