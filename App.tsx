@@ -53,7 +53,8 @@ export default function App() {
           <NavTab icon="📋" label="History" active={tab === 'history'} onPress={() => setTab('history')} />
         </View>
         <Modal visible={showSettings} animationType="slide" presentationStyle="pageSheet">
-          <SettingsScreen user={user} onClose={() => { setShowSettings(false); loadUser(); }} onReset={() => { setShowSettings(false); setUser(null); }} />
+          <SettingsScreen user={user} onClose={() => { setShowSettings(false); loadUser(); }}
+ onReset={() => { setShowSettings(false); setUser(null); }} />
         </Modal>
       </View>
     </SafeAreaProvider>
