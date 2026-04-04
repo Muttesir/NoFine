@@ -25,6 +25,7 @@ export default function App() {
     setLoading(false);
     if (u) {
       GPS.start();
+      scheduleMidnightReminder();
       NotificationService.requestPermission();
     }
   };

@@ -65,3 +65,23 @@ export const NotificationService = {
     }
   },
 };
+
+export const scheduleMidnightReminder = async () => {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+  const tonight = new Date();
+  tonight.setHours(23, 0, 0, 0);
+  if (new Date() >= tonight) {
+    tonight.setDate(tonight.getDate() + 1);
+  }
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '⏰ 1 hour to midnight!',
+      body: 'Did you visit an airport today? Pay now to avoid a fine!',
+      sound: true,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: tonight,
+    },
+  });
+};
