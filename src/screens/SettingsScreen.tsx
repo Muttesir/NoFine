@@ -65,6 +65,7 @@ export default function SettingsScreen({ user: initialUser, onClose, onReset }: 
           </TouchableOpacity>
         </View>
 
+        <TouchableOpacity onPress={async () => { const { testNotificationIn10Seconds } = require('../services/notifications'); await testNotificationIn10Seconds(); Alert.alert('Test', '10 saniye sonra bildirim gelecek!'); }} style={{ padding: 12, alignItems: 'center' }}><Text style={{ color: COLORS.blue, fontSize: 13 }}>🔔 Test Notification (10s)</Text></TouchableOpacity>
         <Text style={s.version}>NoFine v1.0 · Airport Charge Manager</Text>
       </ScrollView>
     </SafeAreaView>

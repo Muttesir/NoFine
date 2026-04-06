@@ -18,34 +18,9 @@ export const NotificationService = {
     const hours = Math.floor((new Date(deadline).getTime() - Date.now()) / 3600000);
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `✈️ ${zoneName} — Charge Started`,
-        body: `£${fee.toFixed(2)} due · Pay within ${hours} hours to avoid penalty`,
+        title: `✈️ ${zoneName}`,
+        body: fee > 0 ? `£${fee.toFixed(2)} due · Pay within ${hours} hours to avoid penalty` : `${zoneName} — no charge right now`,
         sound: true,
-        data: { type: 'zone_entry' },
-      },
-      trigger: null,
-    });
-  },
-
-  urgentReminder: async (zoneName: string, fee: number, minutesLeft: number) => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `🚨 ${minutesLeft} minutes left — ${zoneName}`,
-        body: `Pay £${fee.toFixed(2)} NOW or risk a fine!`,
-        sound: true,
-        data: { type: 'urgent' },
-      },
-      trigger: null,
-    });
-  },
-
-  paymentSuccess: async (zoneName: string, fee: number, penaltyAvoided: number) => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `✅ Payment Complete — ${zoneName}`,
-        body: `£${fee.toFixed(2)} paid · You avoided a £${penaltyAvoided} penalty!`,
-        sound: true,
-        data: { type: 'paid' },
       },
       trigger: null,
     });
@@ -60,7 +35,7 @@ export const NotificationService = {
           body: `Pay £${fee.toFixed(2)} before midnight!`,
           sound: true,
         },
-        trigger: { date: oneHourBefore },
+        trigger: { seconds: Math.floor((oneHourBefore.getTime() - Date.now()) / 1000), repeats: false },
       });
     }
   },
@@ -73,15 +48,24 @@ export const scheduleMidnightReminder = async () => {
   if (new Date() >= tonight) {
     tonight.setDate(tonight.getDate() + 1);
   }
+  const seconds = Math.floor((tonight.getTime() - Date.now()) / 1000);
   await Notifications.scheduleNotificationAsync({
     content: {
       title: '⏰ 1 hour to midnight!',
       body: 'Did you visit an airport today? Pay now to avoid a fine!',
       sound: true,
     },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DATE,
-      date: tonight,
+    trigger: { seconds, repeats: false },
+  });
+};
+
+export const testNotificationIn10Seconds = async () => {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '🔔 Test Notification',
+      body: 'Notifications are working!',
+      sound: true,
     },
+    trigger: { seconds: 10, repeats: false },
   });
 };

@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Storage } from '../services/storage';
-import { API, COLORS } from '../services/api';
+import { API, COLORS, BASE_URL } from '../services/api';
 
 export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [plate, setPlate] = useState('');
   const [vehicle, setVehicle] = useState<any>(null);
+  const [ulez, setUlez] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const verify = async () => {
@@ -15,13 +16,24 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
     try {
       const data = await API.dvlaLookup(plate.trim());
       setVehicle(data);
+      const ulezRes = await fetch(`${BASE_URL}/api/ulez-check?plate=${plate.trim()}`);
+      const ulezData = await ulezRes.json();
+      setUlez(ulezData);
       setStep(2);
     } catch { Alert.alert('Error', 'Could not verify plate'); }
     finally { setLoading(false); }
   };
 
   const finish = async () => {
-    await Storage.saveUser({ name: name.trim(), plate: plate.trim().toUpperCase(), make: vehicle?.make, model: vehicle?.model, colour: vehicle?.colour, year: vehicle?.year, extraPlates: [] });
+    await Storage.saveUser({
+      name: name.trim(),
+      plate: plate.trim().toUpperCase(),
+      make: vehicle?.make,
+      model: vehicle?.model,
+      colour: vehicle?.colour,
+      year: vehicle?.year,
+      extraPlates: [],
+    });
     onDone();
   };
 
@@ -51,6 +63,23 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
               <Text style={s.vehicleInfo}>{vehicle.year} {vehicle.make} {vehicle.model}</Text>
               <Text style={s.vehicleColour}>{vehicle.colour}</Text>
             </View>
+
+            {ulez && (
+              <View style={[s.ulezCard, { backgroundColor: ulez.ulezCompliant ? COLORS.greenDim : COLORS.redDim, borderColor: ulez.ulezCompliant ? COLORS.green + '44' : COLORS.red + '44' }]}>
+                <Text style={{ fontSize: 22 }}>{ulez.ulezCompliant ? '✅' : '⚠️'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.ulezTitle, { color: ulez.ulezCompliant ? COLORS.green : COLORS.red }]}>
+                    {ulez.ulezCompliant ? 'ULEZ Exempt' : 'ULEZ Charge Applies'}
+                  </Text>
+                  <Text style={s.ulezSub}>
+                    {ulez.ulezCompliant
+                      ? 'Your vehicle is exempt from ULEZ charges'
+                      : `£${ulez.charge}/day charge applies in London`}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View style={s.row}>
               <Text style={s.rowLabel}>Driver</Text>
               <Text style={s.rowValue}>{name}</Text>
@@ -85,6 +114,9 @@ const s = StyleSheet.create({
   plateDisplay: { fontSize: 28, fontWeight: '800', color: COLORS.amber, letterSpacing: 4 },
   vehicleInfo: { fontSize: 16, color: COLORS.text, marginTop: 6, fontWeight: '600' },
   vehicleColour: { fontSize: 13, color: COLORS.muted, marginTop: 2 },
+  ulezCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1 },
+  ulezTitle: { fontSize: 14, fontWeight: '800' },
+  ulezSub: { fontSize: 12, color: COLORS.muted, marginTop: 3 },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderColor: COLORS.border },
   rowLabel: { fontSize: 13, color: COLORS.muted },
   rowValue: { fontSize: 13, fontWeight: '600', color: COLORS.text },
