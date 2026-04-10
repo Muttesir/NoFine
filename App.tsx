@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Storage, UserData } from './src/services/storage';
@@ -9,7 +9,7 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { COLORS } from './src/services/api';
 import { GPS } from './src/services/gps';
-import { NotificationService } from './src/services/notifications';
+import { NotificationService, scheduleMidnightReminder } from './src/services/notifications';
 
 type Tab = 'home' | 'tracking' | 'history';
 
@@ -18,15 +18,18 @@ export default function App() {
   const [user, setUser] = useState<UserData | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [showSettings, setShowSettings] = useState(false);
+  const [gpsEnabled, setGpsEnabled] = useState(true);
+  const gpsStarted = useRef(false);
 
   const loadUser = async () => {
     const u = await Storage.getUser();
     setUser(u);
     setLoading(false);
-    if (u) {
-      GPS.start();
-      scheduleMidnightReminder();
+    if (u && !gpsStarted.current) {
+      gpsStarted.current = true;
       NotificationService.requestPermission();
+      scheduleMidnightReminder();
+      GPS.start();
     }
   };
 
@@ -44,8 +47,8 @@ export default function App() {
     <SafeAreaProvider>
       <View style={s.root}>
         <View style={s.content}>
-          {tab === 'home' && <HomeScreen user={user} onOpenSettings={() => setShowSettings(true)} />}
-          {tab === 'tracking' && <TrackingScreen user={user} />}
+          {tab === 'home' && <HomeScreen user={user} onOpenSettings={() => setShowSettings(true)} gpsEnabled={gpsEnabled} onToggleGPS={() => setGpsEnabled(p => !p)} />}
+          {tab === 'tracking' && <TrackingScreen user={user} gpsEnabled={gpsEnabled} />}
           {tab === 'history' && <HistoryScreen />}
         </View>
         <View style={s.nav}>
@@ -54,8 +57,7 @@ export default function App() {
           <NavTab icon="📋" label="History" active={tab === 'history'} onPress={() => setTab('history')} />
         </View>
         <Modal visible={showSettings} animationType="slide" presentationStyle="pageSheet">
-          <SettingsScreen user={user} onClose={() => { setShowSettings(false); loadUser(); }}
- onReset={() => { setShowSettings(false); setUser(null); }} />
+          <SettingsScreen user={user} onClose={() => { setShowSettings(false); loadUser(); }} onReset={() => { setShowSettings(false); setUser(null); }} />
         </Modal>
       </View>
     </SafeAreaProvider>

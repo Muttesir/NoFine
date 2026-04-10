@@ -15,6 +15,12 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 const insideZones = new Set<string>();
+const dailyNotified = new Set<string>(); // Oxford CCZ için günlük tek bildirim
+
+function getDayKey(zoneId: string): string {
+  const today = new Date().toDateString();
+  return zoneId + '_' + today;
+}
 
 TaskManager.defineTask(TASK_NAME, async ({ data, error }: any) => {
   if (error) return;
@@ -31,6 +37,14 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }: any) => {
     const wasInside = insideZones.has(zone.id);
 
     if (inside && !wasInside) {
+      // Oxford CCZ için günlük tek bildirim kontrolü
+      const isOxfordCCZ = zone.id.startsWith('oxford_ccz');
+      const dayKey = getDayKey(zone.id);
+      if (isOxfordCCZ && dailyNotified.has(dayKey)) {
+        insideZones.add(zone.id);
+        continue;
+      }
+      if (isOxfordCCZ) dailyNotified.add(dayKey);
       insideZones.add(zone.id);
       try {
         const result = await API.zoneEntry(user.plate, zone.id);

@@ -66,4 +66,46 @@ export const ZONES = [
     note: '£12.50/day · 24/7',
     payUrl: 'https://tfl.gov.uk/modes/driving/ultra-low-emission-zone/check-if-you-need-to-pay',
   },
+  ,{
+    id: 'oxford_zez', name: 'Oxford Zero Emission Zone', shortName: 'Oxford ZEZ', emoji: '🔵',
+    lat: 51.7520, lng: -1.2577, radiusKm: 0.25, fee: 10, penaltyFee: 60,
+    note: '£4-20/day · 07:00-19:00 daily · EV exempt',
+    payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxford-zero-emission-zone-zez/check-your-vehicle-and-pay',
+  },
+  {
+    id: 'oxford_ccz_hythe', name: 'Oxford CCZ - Hythe Bridge St', shortName: 'Oxford Hythe', emoji: '🚦',
+    lat: 51.7535, lng: -1.2649, radiusKm: 0.08, fee: 5, penaltyFee: 70,
+    note: '£5/day · 07:00-19:00 · once per day',
+    payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge',
+  },
+  {
+    id: 'oxford_ccz_stcross', name: 'Oxford CCZ - St Cross Road', shortName: 'Oxford St Cross', emoji: '🚦',
+    lat: 51.7580, lng: -1.2489, radiusKm: 0.08, fee: 5, penaltyFee: 70,
+    note: '£5/day · 07:00-19:00 · once per day',
+    payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge',
+  },
+  {
+    id: 'oxford_ccz_thames', name: 'Oxford CCZ - Thames Street', shortName: 'Oxford Thames St', emoji: '🚦',
+    lat: 51.7498, lng: -1.2589, radiusKm: 0.08, fee: 5, penaltyFee: 70,
+    note: '£5/day · 07:00-19:00 · once per day',
+    payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge',
+  },
+  {
+    id: 'oxford_ccz_stclements', name: 'Oxford CCZ - St Clements St', shortName: 'Oxford St Clements', emoji: '🚦',
+    lat: 51.7518, lng: -1.2434, radiusKm: 0.08, fee: 5, penaltyFee: 70,
+    note: '£5/day · 07:00-19:00 · once per day',
+    payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge',
+  },
+  {
+    id: 'oxford_ccz_marston', name: 'Oxford CCZ - Marston Ferry Rd', shortName: 'Oxford Marston', emoji: '🚦',
+    lat: 51.7756, lng: -1.2489, radiusKm: 0.08, fee: 5, penaltyFee: 70,
+    note: '£5/day · Mon-Sat 07:00-09:00 & 15:00-18:00',
+    payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge',
+  },
+  {
+    id: 'oxford_ccz_hollow', name: 'Oxford CCZ - Hollow Way', shortName: 'Oxford Hollow Way', emoji: '🚦',
+    lat: 51.7378, lng: -1.2089, radiusKm: 0.08, fee: 5, penaltyFee: 70,
+    note: '£5/day · Mon-Sat 07:00-09:00 & 15:00-18:00',
+    payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge',
+  },
 ];

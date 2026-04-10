@@ -12,10 +12,11 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-export default function HomeScreen({ user, onOpenSettings }: { user: UserData; onOpenSettings: () => void }) {
+export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleGPS }: { user: UserData; onOpenSettings: () => void; gpsEnabled: boolean; onToggleGPS: () => void }) {
   const [charges, setCharges] = useState<Charge[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  
 
   const load = useCallback(async () => {
     const c = await Storage.getCharges();
@@ -25,13 +26,7 @@ export default function HomeScreen({ user, onOpenSettings }: { user: UserData; o
   useEffect(() => {
     load();
     const t = setInterval(load, 15000);
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({});
-        setCoords(loc.coords);
-      }
-    })();
+    Location.getCurrentPositionAsync({}).then(loc => setCoords(loc.coords)).catch(() => {});
     return () => clearInterval(t);
   }, []);
 
@@ -43,6 +38,8 @@ export default function HomeScreen({ user, onOpenSettings }: { user: UserData; o
     return haversine(coords.latitude, coords.longitude, a.lat, a.lng) -
            haversine(coords.latitude, coords.longitude, b.lat, b.lng);
   });
+
+  
 
   return (
     <SafeAreaView style={s.root}>
@@ -57,7 +54,6 @@ export default function HomeScreen({ user, onOpenSettings }: { user: UserData; o
           </View>
           <View style={s.headerRight}>
             <TouchableOpacity style={s.plateBox}>
-              <Text style={s.plateLabel}>🚗</Text>
               <Text style={s.plate}>{user.plate}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.settingsBtn} onPress={onOpenSettings}>
@@ -67,7 +63,6 @@ export default function HomeScreen({ user, onOpenSettings }: { user: UserData; o
         </View>
 
         <View style={s.pad}>
-
           {unpaid.length === 0 ? (
             <View style={s.clearCard}>
               <View style={s.clearIconBox}>
@@ -83,19 +78,22 @@ export default function HomeScreen({ user, onOpenSettings }: { user: UserData; o
           )}
 
           <View style={s.statsRow}>
-            <StatBox label="Saved" value="£0" color={COLORS.green} icon="💰" />
-            <StatBox label="Trips" value="0" color={COLORS.blue} icon="✈️" />
-            <StatBox label="Missed" value="0" color={COLORS.red} icon="⚠️" />
+            <StatBox label="Saved" value="£0" color={COLORS.green} />
+            <StatBox label="Trips" value="0" color={COLORS.blue} />
+            <StatBox label="Missed" value="0" color={COLORS.red} />
           </View>
 
           <View style={s.sectionHeader}>
             <Text style={s.sectionTitle}>Monitored Zones</Text>
-            <View style={s.gpsBadge}>
-              <View style={[s.gpsDot, { backgroundColor: coords ? COLORS.green : COLORS.muted }]} />
-              <Text style={[s.gpsText, { color: coords ? COLORS.green : COLORS.muted }]}>
-                {coords ? 'GPS Active' : 'Locating...'}
+            <TouchableOpacity
+              style={[s.gpsBadge, { backgroundColor: gpsEnabled ? COLORS.greenDim : COLORS.surface }]}
+              onPress={onToggleGPS}
+            >
+              <View style={[s.gpsDot, { backgroundColor: gpsEnabled ? COLORS.green : COLORS.muted }]} />
+              <Text style={[s.gpsText, { color: gpsEnabled ? COLORS.green : COLORS.muted }]}>
+                {gpsEnabled ? 'GPS On' : 'GPS Off'}
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           <View style={s.zoneGrid}>
@@ -107,7 +105,7 @@ export default function HomeScreen({ user, onOpenSettings }: { user: UserData; o
                 <View key={z.id} style={[s.zoneCard, isNear && s.zoneCardNear]}>
                   <View style={s.zoneCardTop}>
                     <Text style={s.zoneEmoji}>{z.emoji}</Text>
-                    <View style={[s.zoneDot, { backgroundColor: isNear ? COLORS.amber : COLORS.green }]} />
+                    <View style={[s.zoneDot, { backgroundColor: isNear ? COLORS.amber : gpsEnabled ? COLORS.green : COLORS.muted }]} />
                   </View>
                   <Text style={s.zoneCardName}>{z.shortName}</Text>
                   <Text style={s.zoneCardFee}>£{z.fee}</Text>
@@ -116,7 +114,6 @@ export default function HomeScreen({ user, onOpenSettings }: { user: UserData; o
               );
             })}
           </View>
-
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -140,7 +137,7 @@ function ChargeCard({ charge, onPaid }: { charge: Charge; onPaid: () => void }) 
         <Text style={[s.chargeFee, urgent && { color: COLORS.red }]}>£{charge.fee.toFixed(2)}</Text>
       </View>
       <TouchableOpacity style={s.appleBtn}>
-        <Text style={s.appleBtnText}>🍎  Pay with Apple Pay</Text>
+        <Text style={s.appleBtnText}>Pay with Apple Pay</Text>
       </TouchableOpacity>
       <TouchableOpacity style={s.portalBtn} onPress={() => Linking.openURL(charge.payUrl)}>
         <Text style={s.portalBtnText}>Open Payment Portal →</Text>
@@ -149,10 +146,9 @@ function ChargeCard({ charge, onPaid }: { charge: Charge; onPaid: () => void }) 
   );
 }
 
-function StatBox({ label, value, color, icon }: { label: string; value: string; color: string; icon: string }) {
+function StatBox({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <View style={s.statBox}>
-      <Text style={{ fontSize: 20 }}>{icon}</Text>
       <Text style={[s.statValue, { color }]}>{value}</Text>
       <Text style={s.statLabel}>{label}</Text>
     </View>
@@ -165,8 +161,7 @@ const s = StyleSheet.create({
   welcome: { fontSize: 13, color: COLORS.muted, fontWeight: '500' },
   name: { fontSize: 28, fontWeight: '800', color: COLORS.text, marginTop: 2 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  plateBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.amberDim, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: COLORS.amber + '44' },
-  plateLabel: { fontSize: 14 },
+  plateBox: { backgroundColor: COLORS.amberDim, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: COLORS.amber + '44' },
   plate: { fontSize: 14, fontWeight: '800', color: COLORS.amber, letterSpacing: 1.5 },
   settingsBtn: { width: 40, height: 40, backgroundColor: COLORS.surface, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
   pad: { padding: 16 },
@@ -190,9 +185,9 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 11, color: COLORS.muted, fontWeight: '600' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  gpsBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: COLORS.surface, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: COLORS.border },
+  gpsBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border },
   gpsDot: { width: 7, height: 7, borderRadius: 4 },
-  gpsText: { fontSize: 11, fontWeight: '600' },
+  gpsText: { fontSize: 11, fontWeight: '700' },
   zoneGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   zoneCard: { width: '47%', backgroundColor: COLORS.surface, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: COLORS.border },
   zoneCardNear: { borderColor: COLORS.amber + '66', backgroundColor: '#1a1200' },
