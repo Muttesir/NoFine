@@ -12,6 +12,8 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+const VALID_ZONES = ZONES.filter(z => z && z.id && z.emoji && z.name);
+
 export default function TrackingScreen({ user, gpsEnabled }: { user: UserData; gpsEnabled: boolean }) {
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -19,7 +21,7 @@ export default function TrackingScreen({ user, gpsEnabled }: { user: UserData; g
     Location.getCurrentPositionAsync({}).then(loc => setCoords(loc.coords)).catch(() => {});
   }, []);
 
-  const sorted = [...ZONES].sort((a, b) => {
+  const sorted = [...VALID_ZONES].sort((a, b) => {
     if (!coords) return 0;
     return haversine(coords.latitude, coords.longitude, a.lat, a.lng) - haversine(coords.latitude, coords.longitude, b.lat, b.lng);
   });
@@ -40,13 +42,13 @@ export default function TrackingScreen({ user, gpsEnabled }: { user: UserData; g
           const distText = dist === null ? 'Locating...' : dist < 1 ? `${Math.round(dist*1000)}m` : `${dist.toFixed(1)}km`;
           return (
             <View key={zone.id} style={s.row}>
-              <Text style={{ fontSize: 22, width: 36 }}>{zone.emoji}</Text>
+              <Text style={s.emoji}>{zone.emoji}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={s.zoneName}>{zone.shortName}</Text>
                 <Text style={s.zoneDist}>{distText} away</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: 10, color: COLORS.green, fontWeight: '700' }}>● Clear</Text>
+                <Text style={s.clear}>● Clear</Text>
                 <Text style={s.zoneFee}>£{zone.fee}</Text>
               </View>
             </View>
@@ -65,7 +67,9 @@ const s = StyleSheet.create({
   badgeText: { fontSize: 11, fontWeight: '700' },
   scroll: { flex: 1, padding: 16 },
   row: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 14, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: COLORS.border, gap: 8 },
+  emoji: { fontSize: 22, width: 36 },
   zoneName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   zoneDist: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
+  clear: { fontSize: 10, color: COLORS.green, fontWeight: '700' },
   zoneFee: { fontSize: 16, fontWeight: '800', color: COLORS.muted, marginTop: 2 },
 });

@@ -12,11 +12,14 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+const LONDON_ZONES = ZONES.filter(z => !z.id.startsWith('oxford'));
+const OXFORD_ZONES = ZONES.filter(z => z.id.startsWith('oxford'));
+
 export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleGPS }: { user: UserData; onOpenSettings: () => void; gpsEnabled: boolean; onToggleGPS: () => void }) {
   const [charges, setCharges] = useState<Charge[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  
+  const [oxfordExpanded, setOxfordExpanded] = useState(false);
 
   const load = useCallback(async () => {
     const c = await Storage.getCharges();
@@ -33,13 +36,18 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
   const unpaid = charges.filter(c => !c.paid);
 
-  const sortedZones = [...ZONES].sort((a, b) => {
-    if (!coords) return 0;
-    return haversine(coords.latitude, coords.longitude, a.lat, a.lng) -
-           haversine(coords.latitude, coords.longitude, b.lat, b.lng);
+  const getDist = (lat: number, lng: number) => {
+    if (!coords) return null;
+    return haversine(coords.latitude, coords.longitude, lat, lng);
+  };
+
+  const sortedLondon = [...LONDON_ZONES].sort((a, b) => {
+    const da = getDist(a.lat, a.lng) ?? 999;
+    const db = getDist(b.lat, b.lng) ?? 999;
+    return da - db;
   });
 
-  
+  const oxfordDist = coords ? Math.min(...OXFORD_ZONES.map(z => haversine(coords.latitude, coords.longitude, z.lat, z.lng))) : null;
 
   return (
     <SafeAreaView style={s.root}>
@@ -65,9 +73,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
         <View style={s.pad}>
           {unpaid.length === 0 ? (
             <View style={s.clearCard}>
-              <View style={s.clearIconBox}>
-                <Text style={{ fontSize: 32 }}>✅</Text>
-              </View>
+              <View style={s.clearIconBox}><Text style={{ fontSize: 32 }}>✅</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={s.clearTitle}>All Clear</Text>
                 <Text style={s.clearSub}>No unpaid charges · Safe to drive</Text>
@@ -83,12 +89,10 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
             <StatBox label="Missed" value="0" color={COLORS.red} />
           </View>
 
+          {/* London Zones */}
           <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Monitored Zones</Text>
-            <TouchableOpacity
-              style={[s.gpsBadge, { backgroundColor: gpsEnabled ? COLORS.greenDim : COLORS.surface }]}
-              onPress={onToggleGPS}
-            >
+            <Text style={s.sectionTitle}>London Zones</Text>
+            <TouchableOpacity style={[s.gpsBadge, { backgroundColor: gpsEnabled ? COLORS.greenDim : COLORS.surface }]} onPress={onToggleGPS}>
               <View style={[s.gpsDot, { backgroundColor: gpsEnabled ? COLORS.green : COLORS.muted }]} />
               <Text style={[s.gpsText, { color: gpsEnabled ? COLORS.green : COLORS.muted }]}>
                 {gpsEnabled ? 'GPS On' : 'GPS Off'}
@@ -97,15 +101,15 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
           </View>
 
           <View style={s.zoneGrid}>
-            {sortedZones.map(z => {
-              const dist = coords ? haversine(coords.latitude, coords.longitude, z.lat, z.lng) : null;
+            {sortedLondon.map(z => {
+              const dist = getDist(z.lat, z.lng);
               const distText = dist === null ? '...' : dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
               const isNear = dist !== null && dist < 5;
               return (
                 <View key={z.id} style={[s.zoneCard, isNear && s.zoneCardNear]}>
                   <View style={s.zoneCardTop}>
                     <Text style={s.zoneEmoji}>{z.emoji}</Text>
-                    <View style={[s.zoneDot, { backgroundColor: isNear ? COLORS.amber : gpsEnabled ? COLORS.green : COLORS.muted }]} />
+                    <View style={[s.zoneDot, { backgroundColor: isNear ? COLORS.amber : COLORS.green }]} />
                   </View>
                   <Text style={s.zoneCardName}>{z.shortName}</Text>
                   <Text style={s.zoneCardFee}>£{z.fee}</Text>
@@ -114,6 +118,37 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
               );
             })}
           </View>
+
+          {/* Oxford Section */}
+          <TouchableOpacity style={s.oxfordHeader} onPress={() => setOxfordExpanded(p => !p)}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.sectionTitle}>Oxford Zones</Text>
+              <Text style={s.oxfordSub}>
+                {oxfordDist !== null ? `${oxfordDist.toFixed(1)}km away` : '...'} · ZEZ + 6 CCZ points
+              </Text>
+            </View>
+            <Text style={{ color: COLORS.muted, fontSize: 18 }}>{oxfordExpanded ? '▲' : '▼'}</Text>
+          </TouchableOpacity>
+
+          {oxfordExpanded && (
+            <View style={s.zoneGrid}>
+              {OXFORD_ZONES.map(z => {
+                const dist = getDist(z.lat, z.lng);
+                const distText = dist === null ? '...' : dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
+                return (
+                  <View key={z.id} style={s.zoneCard}>
+                    <View style={s.zoneCardTop}>
+                      <Text style={s.zoneEmoji}>{z.emoji}</Text>
+                      <View style={[s.zoneDot, { backgroundColor: COLORS.green }]} />
+                    </View>
+                    <Text style={s.zoneCardName}>{z.shortName}</Text>
+                    <Text style={s.zoneCardFee}>£{z.fee}</Text>
+                    <Text style={s.zoneCardDist}>{distText} away</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -185,10 +220,12 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 11, color: COLORS.muted, fontWeight: '600' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
+  oxfordHeader: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 16, padding: 14, marginTop: 16, marginBottom: 10, borderWidth: 1, borderColor: COLORS.border },
+  oxfordSub: { fontSize: 12, color: COLORS.muted, marginTop: 3 },
   gpsBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border },
   gpsDot: { width: 7, height: 7, borderRadius: 4 },
   gpsText: { fontSize: 11, fontWeight: '700' },
-  zoneGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  zoneGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
   zoneCard: { width: '47%', backgroundColor: COLORS.surface, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: COLORS.border },
   zoneCardNear: { borderColor: COLORS.amber + '66', backgroundColor: '#1a1200' },
   zoneCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
