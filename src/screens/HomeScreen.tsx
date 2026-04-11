@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, RefreshControl, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, RefreshControl, Linking, Switch } from 'react-native';
 import * as Location from 'expo-location';
 import { Storage, UserData, Charge } from '../services/storage';
 import { COLORS, ZONES } from '../services/api';
@@ -12,14 +12,13 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-const LONDON_ZONES = ZONES.filter(z => !z.id.startsWith('oxford'));
-const OXFORD_ZONES = ZONES.filter(z => z.id.startsWith('oxford'));
+const LONDON_ZONES = ZONES.filter(z => z && z.id && !z.id.startsWith('oxford'));
+const OXFORD_ZONES = ZONES.filter(z => z && z.id && z.id.startsWith('oxford'));
 
 export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleGPS }: { user: UserData; onOpenSettings: () => void; gpsEnabled: boolean; onToggleGPS: () => void }) {
   const [charges, setCharges] = useState<Charge[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [oxfordExpanded, setOxfordExpanded] = useState(false);
 
   const load = useCallback(async () => {
     const c = await Storage.getCharges();
@@ -89,17 +88,22 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
             <StatBox label="Missed" value="0" color={COLORS.red} />
           </View>
 
-          {/* London Zones */}
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>London Zones</Text>
-            <TouchableOpacity style={[s.gpsBadge, { backgroundColor: gpsEnabled ? COLORS.greenDim : COLORS.surface }]} onPress={onToggleGPS}>
-              <View style={[s.gpsDot, { backgroundColor: gpsEnabled ? COLORS.green : COLORS.muted }]} />
-              <Text style={[s.gpsText, { color: gpsEnabled ? COLORS.green : COLORS.muted }]}>
-                {gpsEnabled ? 'GPS On' : 'GPS Off'}
-              </Text>
-            </TouchableOpacity>
+          {/* GPS Toggle */}
+          <View style={s.gpsRow}>
+            <View>
+              <Text style={s.gpsLabel}>GPS Monitoring</Text>
+              <Text style={s.gpsSub}>Detect charge zones automatically</Text>
+            </View>
+            <Switch
+              value={gpsEnabled}
+              onValueChange={onToggleGPS}
+              trackColor={{ false: COLORS.surface2, true: COLORS.green }}
+              thumbColor={'#fff'}
+            />
           </View>
 
+          {/* London Zones */}
+          <Text style={[s.sectionTitle, { marginBottom: 12 }]}>London Zones</Text>
           <View style={s.zoneGrid}>
             {sortedLondon.map(z => {
               const dist = getDist(z.lat, z.lng);
@@ -119,36 +123,28 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
             })}
           </View>
 
-          {/* Oxford Section */}
-          <TouchableOpacity style={s.oxfordHeader} onPress={() => setOxfordExpanded(p => !p)}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.sectionTitle}>Oxford Zones</Text>
-              <Text style={s.oxfordSub}>
-                {oxfordDist !== null ? `${oxfordDist.toFixed(1)}km away` : '...'} · ZEZ + 6 CCZ points
-              </Text>
+          {/* Oxford Section — tek kart */}
+          <Text style={[s.sectionTitle, { marginTop: 20, marginBottom: 12 }]}>Oxford</Text>
+          <TouchableOpacity
+            style={s.oxfordCard}
+            onPress={() => Linking.openURL('https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge')}
+          >
+            <View style={s.oxfordLeft}>
+              <Text style={s.oxfordEmoji}>🚦</Text>
+              <View>
+                <Text style={s.oxfordName}>Oxford Congestion & ZEZ</Text>
+                <Text style={s.oxfordNote}>ZEZ £4-20 · CCZ £5/day · 07:00-19:00</Text>
+                <Text style={s.oxfordDist}>
+                  {oxfordDist !== null ? `${oxfordDist.toFixed(1)}km away` : 'Locating...'}
+                </Text>
+              </View>
             </View>
-            <Text style={{ color: COLORS.muted, fontSize: 18 }}>{oxfordExpanded ? '▲' : '▼'}</Text>
+            <View style={s.oxfordRight}>
+              <Text style={s.oxfordPay}>Pay →</Text>
+            </View>
           </TouchableOpacity>
+          <Text style={s.oxfordHint}>GPS monitors 6 CCZ points + ZEZ automatically</Text>
 
-          {oxfordExpanded && (
-            <View style={s.zoneGrid}>
-              {OXFORD_ZONES.map(z => {
-                const dist = getDist(z.lat, z.lng);
-                const distText = dist === null ? '...' : dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
-                return (
-                  <View key={z.id} style={s.zoneCard}>
-                    <View style={s.zoneCardTop}>
-                      <Text style={s.zoneEmoji}>{z.emoji}</Text>
-                      <View style={[s.zoneDot, { backgroundColor: COLORS.green }]} />
-                    </View>
-                    <Text style={s.zoneCardName}>{z.shortName}</Text>
-                    <Text style={s.zoneCardFee}>£{z.fee}</Text>
-                    <Text style={s.zoneCardDist}>{distText} away</Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -214,17 +210,14 @@ const s = StyleSheet.create({
   appleBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   portalBtn: { padding: 10, alignItems: 'center' },
   portalBtnText: { color: COLORS.blue, fontWeight: '600', fontSize: 14 },
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   statBox: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 18, padding: 14, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: COLORS.border },
   statValue: { fontSize: 20, fontWeight: '800' },
   statLabel: { fontSize: 11, color: COLORS.muted, fontWeight: '600' },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  gpsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: COLORS.border },
+  gpsLabel: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  gpsSub: { fontSize: 12, color: COLORS.muted, marginTop: 3 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  oxfordHeader: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 16, padding: 14, marginTop: 16, marginBottom: 10, borderWidth: 1, borderColor: COLORS.border },
-  oxfordSub: { fontSize: 12, color: COLORS.muted, marginTop: 3 },
-  gpsBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border },
-  gpsDot: { width: 7, height: 7, borderRadius: 4 },
-  gpsText: { fontSize: 11, fontWeight: '700' },
   zoneGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
   zoneCard: { width: '47%', backgroundColor: COLORS.surface, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: COLORS.border },
   zoneCardNear: { borderColor: COLORS.amber + '66', backgroundColor: '#1a1200' },
@@ -234,4 +227,13 @@ const s = StyleSheet.create({
   zoneCardName: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 4 },
   zoneCardFee: { fontSize: 20, fontWeight: '900', color: COLORS.amber },
   zoneCardDist: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
+  oxfordCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: COLORS.border },
+  oxfordLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  oxfordEmoji: { fontSize: 28 },
+  oxfordName: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  oxfordNote: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
+  oxfordDist: { fontSize: 11, color: COLORS.amber, marginTop: 3 },
+  oxfordRight: { paddingLeft: 8 },
+  oxfordPay: { fontSize: 14, fontWeight: '700', color: COLORS.blue },
+  oxfordHint: { fontSize: 11, color: COLORS.dim, marginTop: 8, textAlign: 'center' },
 });

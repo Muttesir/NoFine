@@ -10,6 +10,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   const [vehicle, setVehicle] = useState<any>(null);
   const [ulez, setUlez] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [notUK, setNotUK] = useState(false);
 
   const verify = async () => {
     setLoading(true);
@@ -20,8 +21,18 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
       const ulezData = await ulezRes.json();
       setUlez(ulezData);
       setStep(2);
-    } catch { Alert.alert('Error', 'Could not verify plate'); }
-    finally { setLoading(false); }
+    } catch {
+      Alert.alert('Error', 'Could not verify plate. Is it a UK registered vehicle?');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const skipVerify = () => {
+    setVehicle({ make: 'UNKNOWN', colour: 'UNKNOWN', year: null, verified: false });
+    setUlez(null);
+    setNotUK(true);
+    setStep(2);
   };
 
   const finish = async () => {
@@ -29,7 +40,6 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
       name: name.trim(),
       plate: plate.trim().toUpperCase(),
       make: vehicle?.make,
-      model: vehicle?.model,
       colour: vehicle?.colour,
       year: vehicle?.year,
       extraPlates: [],
@@ -42,29 +52,53 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <View style={s.logo}>
           <Text style={s.logoText}>NoFine</Text>
-          <Text style={s.logoSub}>Airport Charge Manager</Text>
+          <Text style={s.logoSub}>Airport & Charge Manager</Text>
         </View>
+
         {step === 1 && (
           <View style={s.card}>
             <Text style={s.label}>YOUR NAME</Text>
             <TextInput style={s.input} placeholder="Your name" placeholderTextColor={COLORS.dim} value={name} onChangeText={setName} autoCapitalize="words" />
             <Text style={[s.label, { marginTop: 16 }]}>VEHICLE PLATE</Text>
             <TextInput style={[s.input, s.plateInput]} placeholder="AB12 CDE" placeholderTextColor={COLORS.dim} value={plate} onChangeText={t => setPlate(t.toUpperCase())} autoCapitalize="characters" autoCorrect={false} />
-            <TouchableOpacity style={[s.btn, (!name.trim() || !plate.trim()) && { opacity: 0.4 }]} onPress={verify} disabled={loading || !name.trim() || !plate.trim()}>
-              {loading ? <ActivityIndicator color="#000" /> : <Text style={s.btnText}>Verify Plate →</Text>}
+            <TouchableOpacity
+              style={[s.btn, (!name.trim() || !plate.trim()) && { opacity: 0.4 }]}
+              onPress={verify}
+              disabled={loading || !name.trim() || !plate.trim()}
+            >
+              {loading ? <ActivityIndicator color="#000" /> : <Text style={s.btnText}>Verify UK Plate →</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={s.skipBtn} onPress={() => { if (!name.trim() || !plate.trim()) { Alert.alert('Please enter your name and plate first'); return; } skipVerify(); }}>
+              <Text style={s.skipText}>Not a UK registered vehicle?</Text>
             </TouchableOpacity>
           </View>
         )}
-        {step === 2 && vehicle && (
+
+        {step === 2 && (
           <View style={s.card}>
-            <Text style={s.verified}>✓ Plate Verified</Text>
+            {notUK ? (
+              <Text style={s.verified}>⚠️ Non-UK Vehicle</Text>
+            ) : (
+              <Text style={s.verified}>✓ Plate Verified</Text>
+            )}
+
             <View style={s.vehicleCard}>
               <Text style={s.plateDisplay}>{plate.toUpperCase()}</Text>
-              <Text style={s.vehicleInfo}>{vehicle.year} {vehicle.make} {vehicle.model}</Text>
-              <Text style={s.vehicleColour}>{vehicle.colour}</Text>
+              {!notUK && vehicle && (
+                <>
+                  <View style={s.vehicleRow}>
+                    <VehicleBadge label="Make" value={vehicle.make || 'N/A'} />
+                    <VehicleBadge label="Year" value={vehicle.year ? String(vehicle.year) : 'N/A'} />
+                    <VehicleBadge label="Colour" value={vehicle.colour || 'N/A'} />
+                  </View>
+                </>
+              )}
+              {notUK && (
+                <Text style={s.vehicleNote}>ULEZ/CCZ charges may apply — check manually</Text>
+              )}
             </View>
 
-            {ulez && (
+            {ulez && !notUK && (
               <View style={[s.ulezCard, { backgroundColor: ulez.ulezCompliant ? COLORS.greenDim : COLORS.redDim, borderColor: ulez.ulezCompliant ? COLORS.green + '44' : COLORS.red + '44' }]}>
                 <Text style={{ fontSize: 22 }}>{ulez.ulezCompliant ? '✅' : '⚠️'}</Text>
                 <View style={{ flex: 1 }}>
@@ -74,7 +108,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
                   <Text style={s.ulezSub}>
                     {ulez.ulezCompliant
                       ? 'Your vehicle is exempt from ULEZ charges'
-                      : `£${ulez.charge}/day charge applies in London`}
+                      : `£${ulez.charge}/day charge when driving in London`}
                   </Text>
                 </View>
               </View>
@@ -84,10 +118,11 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
               <Text style={s.rowLabel}>Driver</Text>
               <Text style={s.rowValue}>{name}</Text>
             </View>
+
             <TouchableOpacity style={s.btn} onPress={finish}>
               <Text style={s.btnText}>Start Driving 🚗</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.back} onPress={() => setStep(1)}>
+            <TouchableOpacity style={s.back} onPress={() => { setStep(1); setNotUK(false); }}>
               <Text style={s.backText}>← Change plate</Text>
             </TouchableOpacity>
           </View>
@@ -96,6 +131,21 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
     </KeyboardAvoidingView>
   );
 }
+
+function VehicleBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={vs.badge}>
+      <Text style={vs.label}>{label}</Text>
+      <Text style={vs.value}>{value}</Text>
+    </View>
+  );
+}
+
+const vs = StyleSheet.create({
+  badge: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 10, padding: 8, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
+  label: { fontSize: 9, color: COLORS.muted, letterSpacing: 1, marginBottom: 4 },
+  value: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+});
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
@@ -109,11 +159,13 @@ const s = StyleSheet.create({
   plateInput: { fontSize: 24, fontWeight: '800', color: COLORS.amber, letterSpacing: 4, textAlign: 'center', marginBottom: 4 },
   btn: { backgroundColor: COLORS.green, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 20 },
   btnText: { fontSize: 16, fontWeight: '800', color: '#000' },
+  skipBtn: { alignItems: 'center', marginTop: 14 },
+  skipText: { fontSize: 13, color: COLORS.blue },
   verified: { fontSize: 18, fontWeight: '700', color: COLORS.green, marginBottom: 16 },
   vehicleCard: { backgroundColor: COLORS.surface2, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: COLORS.border },
-  plateDisplay: { fontSize: 28, fontWeight: '800', color: COLORS.amber, letterSpacing: 4 },
-  vehicleInfo: { fontSize: 16, color: COLORS.text, marginTop: 6, fontWeight: '600' },
-  vehicleColour: { fontSize: 13, color: COLORS.muted, marginTop: 2 },
+  plateDisplay: { fontSize: 28, fontWeight: '800', color: COLORS.amber, letterSpacing: 4, marginBottom: 12 },
+  vehicleRow: { flexDirection: 'row', gap: 8, width: '100%' },
+  vehicleNote: { fontSize: 12, color: COLORS.muted, marginTop: 8, textAlign: 'center' },
   ulezCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1 },
   ulezTitle: { fontSize: 14, fontWeight: '800' },
   ulezSub: { fontSize: 12, color: COLORS.muted, marginTop: 3 },
