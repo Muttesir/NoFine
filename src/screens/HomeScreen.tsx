@@ -2,6 +2,7 @@ import { handleLocationUpdate } from '../services/locationService';
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, RefreshControl, Linking, Switch } from 'react-native';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { Storage, UserData, Charge } from '../services/storage';
 import { COLORS, ZONES } from '../services/api';
 
@@ -172,6 +173,10 @@ function ChargeCard({ charge, onPaid }: { charge: Charge; onPaid: () => void }) 
       <TouchableOpacity style={s.appleBtn}>
         <Text style={s.appleBtnText}>Pay with Apple Pay</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={s.paidBtn} onPress={async () => { const all = await Storage.getCharges(); const updated = all.map((c: Charge) => c.id === charge.id ? { ...c, paid: true, paidAt: new Date().toISOString() } : c); await Storage.saveCharges(updated); await Storage.addToHistory({ ...charge, paid: true, paidAt: new Date().toISOString() }); const remaining = updated.filter((c: Charge) => !c.paid).length; await Notifications.setBadgeCountAsync(remaining);
+onPaid(); }}>
+        <Text style={s.paidBtnText}>✅ Mark as Paid</Text>
+      </TouchableOpacity>
       <TouchableOpacity style={s.portalBtn} onPress={() => Linking.openURL(charge.payUrl)}>
         <Text style={s.portalBtnText}>Open Payment Portal →</Text>
       </TouchableOpacity>
@@ -210,6 +215,8 @@ const s = StyleSheet.create({
   chargeFee: { fontSize: 36, fontWeight: '900', color: COLORS.amber },
   appleBtn: { backgroundColor: '#000', borderRadius: 14, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: '#333', marginBottom: 8 },
   appleBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  paidBtn: { backgroundColor: COLORS.greenDim, borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: COLORS.green + '44' },
+  paidBtnText: { color: COLORS.green, fontWeight: '800', fontSize: 15 },
   portalBtn: { padding: 10, alignItems: 'center' },
   portalBtnText: { color: COLORS.blue, fontWeight: '600', fontSize: 14 },
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
@@ -240,7 +247,6 @@ const s = StyleSheet.create({
   oxfordHint: { fontSize: 11, color: COLORS.dim, marginTop: 8, textAlign: 'center' },
 });
 // TEST - remove later
-import * as Notifications from 'expo-notifications';
 async function testNotif() {
   const { status } = await Notifications.getPermissionsAsync();
   console.log("[NOTIF] permission status:", status);

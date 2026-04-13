@@ -16,11 +16,11 @@ export const NotificationService = {
   },
 
   zoneEntry: async (zoneName: string, fee: number, deadline: string) => {
-    const hours = Math.floor((new Date(deadline).getTime() - Date.now()) / 3600000);
+    const hours = Math.max(1, Math.floor((new Date(deadline).getTime() - Date.now()) / 3600000));
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `✈️ ${zoneName}`,
-        body: fee > 0 ? `£${fee.toFixed(2)} due · Pay within ${hours} hours to avoid penalty` : `${zoneName} — no charge right now`,
+        body: fee > 0 ? `£${fee.toFixed(2)} due · Pay before midnight to avoid penalty` : `${zoneName} — no charge right now`,
         sound: true,
       },
       trigger: { type: 'timeInterval', seconds: 2, repeats: false } as any,

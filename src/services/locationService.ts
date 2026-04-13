@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { Storage } from './storage';
 import { ZONES, API } from './api';
 import { NotificationService } from './notifications';
@@ -59,7 +60,13 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
           await Storage.saveCharges(charges);
           console.log("[NOTIF] sending zone entry notification"); await NotificationService.zoneEntry(zone.name, zone.fee, result.deadline);
           await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, result.deadline);
-          console.log(`[GPS] Charge created: £${zone.fee}`);
+          const before = await Storage.getCharges();
+          console.log("[BADGE] charges in storage before:", before.length);
+          const freshCharges = before;
+          const unpaidCount = freshCharges.filter((c: any) => !c.paid).length;
+          console.log("[BADGE] unpaid count:", unpaidCount);
+          await Notifications.setBadgeCountAsync(unpaidCount);
+console.log(`[GPS] Charge created: £${zone.fee}`);
         } catch (e) {
           console.log('[GPS] entry error:', e);
         }

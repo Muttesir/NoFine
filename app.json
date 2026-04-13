@@ -20,7 +20,11 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "NoFine uses your location to detect when you enter charge zones and send payment reminders.",
         "NSLocationAlwaysUsageDescription": "NoFine needs background location to detect charge zones even when the app is closed.",
         "NSLocationWhenInUseUsageDescription": "NoFine uses your location to show nearby charge zones.",
-        "UIBackgroundModes": ["location", "fetch"]
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -47,7 +51,10 @@
       [
         "expo-notifications",
         {
-          "sounds": []
+          "icon": "./assets/icon.png",
+          "color": "#1DB954",
+          "sounds": [],
+          "iosDisplayInForeground": true
         }
       ]
     ],
