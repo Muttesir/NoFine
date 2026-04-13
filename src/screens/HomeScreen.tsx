@@ -1,3 +1,4 @@
+import { handleLocationUpdate } from '../services/locationService';
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, RefreshControl, Linking, Switch } from 'react-native';
 import * as Location from 'expo-location';
@@ -91,6 +92,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
           {/* GPS Toggle */}
           <View style={s.gpsRow}>
             <View>
+              <TouchableOpacity onPress={simulateHeathrow} style={{backgroundColor:"#F5A623",borderRadius:10,padding:8,marginBottom:8}}><Text style={{color:"#000",fontWeight:"800",fontSize:12}}>🔔 Simulate Heathrow</Text></TouchableOpacity>
               <Text style={s.gpsLabel}>GPS Monitoring</Text>
               <Text style={s.gpsSub}>Detect charge zones automatically</Text>
             </View>
@@ -237,3 +239,19 @@ const s = StyleSheet.create({
   oxfordPay: { fontSize: 14, fontWeight: '700', color: COLORS.blue },
   oxfordHint: { fontSize: 11, color: COLORS.dim, marginTop: 8, textAlign: 'center' },
 });
+// TEST - remove later
+import * as Notifications from 'expo-notifications';
+async function testNotif() {
+  const { status } = await Notifications.getPermissionsAsync();
+  console.log("[NOTIF] permission status:", status);
+  alert("Permission: " + status);
+  await Notifications.scheduleNotificationAsync({
+    content: { title: '✈️ Heathrow', body: '£7 due · Pay by midnight tomorrow' },
+    trigger: { type: 'timeInterval', seconds: 2, repeats: false } as any,
+  });
+}
+
+async function simulateHeathrow() {
+  
+  await handleLocationUpdate({ latitude: 51.4713, longitude: -0.4523 });
+}

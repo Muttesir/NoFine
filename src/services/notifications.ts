@@ -2,7 +2,8 @@ import * as Notifications from 'expo-notifications';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -22,7 +23,7 @@ export const NotificationService = {
         body: fee > 0 ? `£${fee.toFixed(2)} due · Pay within ${hours} hours to avoid penalty` : `${zoneName} — no charge right now`,
         sound: true,
       },
-      trigger: null,
+      trigger: { type: 'timeInterval', seconds: 2, repeats: false } as any,
     });
   },
 
@@ -35,7 +36,7 @@ export const NotificationService = {
           body: `Pay £${fee.toFixed(2)} before midnight!`,
           sound: true,
         },
-        trigger: { seconds: Math.floor((oneHourBefore.getTime() - Date.now()) / 1000), repeats: false },
+        trigger: { type: 'timeInterval', seconds: Math.floor((oneHourBefore.getTime() - Date.now()) / 1000), repeats: false } as any,
       });
     }
   },
@@ -55,7 +56,7 @@ export const scheduleMidnightReminder = async () => {
       body: 'Did you visit an airport today? Pay now to avoid a fine!',
       sound: true,
     },
-    trigger: { seconds, repeats: false },
+    trigger: { type: 'timeInterval', seconds, repeats: false } as any,
   });
 };
 
@@ -66,6 +67,6 @@ export const testNotificationIn10Seconds = async () => {
       body: 'Notifications are working!',
       sound: true,
     },
-    trigger: { seconds: 10, repeats: false },
+    trigger: { type: 'timeInterval', seconds: 10, repeats: false } as any,
   });
 };

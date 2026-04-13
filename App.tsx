@@ -8,7 +8,7 @@ import TrackingScreen from './src/screens/TrackingScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { COLORS } from './src/services/api';
-import { GPS } from './src/services/gps';
+import { LocationService } from './src/services/locationService';
 import { NotificationService, scheduleMidnightReminder } from './src/services/notifications';
 
 type Tab = 'home' | 'tracking' | 'history';
@@ -19,17 +19,22 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('home');
   const [showSettings, setShowSettings] = useState(false);
   const [gpsEnabled, setGpsEnabled] = useState(true);
-  const gpsStarted = useRef(false);
+  const started = useRef(false);
 
   const loadUser = async () => {
-    const u = await Storage.getUser();
-    setUser(u);
-    setLoading(false);
-    if (u && !gpsStarted.current) {
-      gpsStarted.current = true;
-      NotificationService.requestPermission();
-      scheduleMidnightReminder();
-      GPS.start();
+    try {
+      const u = await Storage.getUser();
+      setUser(u);
+      if (u && !started.current) {
+        started.current = true;
+        await NotificationService.requestPermission();
+        scheduleMidnightReminder();
+        await LocationService.start();
+      }
+    } catch (e) {
+      console.log('loadUser error:', e);
+    } finally {
+      setLoading(false);
     }
   };
 

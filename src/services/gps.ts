@@ -15,11 +15,10 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 const insideZones = new Set<string>();
-const dailyNotified = new Set<string>(); // Oxford CCZ için günlük tek bildirim
+const dailyNotified = new Set<string>();
 
 function getDayKey(zoneId: string): string {
-  const today = new Date().toDateString();
-  return zoneId + '_' + today;
+  return zoneId + '_' + new Date().toDateString();
 }
 
 TaskManager.defineTask(TASK_NAME, async ({ data, error }: any) => {
@@ -32,19 +31,19 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }: any) => {
   if (!user) return;
 
   for (const zone of ZONES) {
+    if (!zone) continue;
     const dist = haversine(loc.coords.latitude, loc.coords.longitude, zone.lat, zone.lng);
     const inside = dist <= zone.radiusKm;
     const wasInside = insideZones.has(zone.id);
 
     if (inside && !wasInside) {
-      // Oxford CCZ için günlük tek bildirim kontrolü
-      const isOxfordCCZ = zone.id.startsWith('oxford_ccz');
+      const isDaily = zone.id.startsWith('oxford_ccz') || zone.id === 'ccz' || zone.id === 'ulez';
       const dayKey = getDayKey(zone.id);
-      if (isOxfordCCZ && dailyNotified.has(dayKey)) {
+      if (isDaily && dailyNotified.has(dayKey)) {
         insideZones.add(zone.id);
         continue;
       }
-      if (isOxfordCCZ) dailyNotified.add(dayKey);
+      if (isDaily) dailyNotified.add(dayKey);
       insideZones.add(zone.id);
       try {
         const result = await API.zoneEntry(user.plate, zone.id);
@@ -82,24 +81,35 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }: any) => {
 
 export const GPS = {
   start: async () => {
-    const { status: fg } = await Location.requestForegroundPermissionsAsync();
-    if (fg !== 'granted') return false;
-    const { status: bg } = await Location.requestBackgroundPermissionsAsync();
-    if (bg !== 'granted') return false;
-    await Location.startLocationUpdatesAsync(TASK_NAME, {
-      accuracy: Location.Accuracy.High,
-      distanceInterval: 50,
-      showsBackgroundLocationIndicator: true,
-      foregroundService: {
-        notificationTitle: 'NoFine',
-        notificationBody: 'Monitoring airport zones...',
-      },
-    });
-    return true;
+    try {
+      const { status: fg } = await Location.requestForegroundPermissionsAsync();
+      if (fg !== 'granted') return false;
+      
+      const { status: bg } = await Location.requestBackgroundPermissionsAsync();
+      
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(TASK_NAME).catch(() => false);
+      if (isRunning) return true;
+
+      await Location.startLocationUpdatesAsync(TASK_NAME, {
+        accuracy: Location.Accuracy.High,
+        distanceInterval: 50,
+        showsBackgroundLocationIndicator: bg === 'granted',
+        ...(bg === 'granted' ? {
+          foregroundService: {
+            notificationTitle: 'NoFine',
+            notificationBody: 'Monitoring airport zones...',
+          },
+        } : {}),
+      });
+      return true;
+    } catch (e) {
+      console.log('[GPS] start error:', e);
+      return false;
+    }
   },
   stop: async () => {
-    const running = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
+    const running = await Location.hasStartedLocationUpdatesAsync(TASK_NAME).catch(() => false);
     if (running) await Location.stopLocationUpdatesAsync(TASK_NAME);
   },
-  isRunning: () => Location.hasStartedLocationUpdatesAsync(TASK_NAME),
+  isRunning: () => Location.hasStartedLocationUpdatesAsync(TASK_NAME).catch(() => false),
 };
