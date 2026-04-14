@@ -41,7 +41,7 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
 
       console.log(`[GPS] ENTERED: ${zone.name}`);
 
-      if (zone.chargeType === 'per_entry') {
+      if (zone.chargeType === 'per_entry' || zone.chargeType === 'daily') {
         try {
           const result = await API.zoneEntry(user.plate, zone.id);
           const charges = await Storage.getCharges();
