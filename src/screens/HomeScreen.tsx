@@ -93,9 +93,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
           {/* GPS Toggle */}
           <View style={s.gpsRow}>
             <View>
-              <TouchableOpacity onPress={simulateOxford} style={{backgroundColor:"#3B82F6",borderRadius:10,padding:8,marginBottom:8,marginRight:8}}><Text style={{color:"#fff",fontWeight:"800",fontSize:12}}>🚦 Oxford</Text></TouchableOpacity>
-              <TouchableOpacity onPress={simulateHeathrow} style={{backgroundColor:"#F5A623",borderRadius:10,padding:8,marginBottom:8}}><Text style={{color:"#000",fontWeight:"800",fontSize:12}}>🔔 Simulate Heathrow</Text></TouchableOpacity>
-              <Text style={s.gpsLabel}>GPS Monitoring</Text>
+                                          <Text style={s.gpsLabel}>GPS Monitoring</Text>
               <Text style={s.gpsSub}>Detect charge zones automatically</Text>
             </View>
             <Switch
@@ -248,21 +246,3 @@ const s = StyleSheet.create({
   oxfordHint: { fontSize: 11, color: COLORS.dim, marginTop: 8, textAlign: 'center' },
 });
 // TEST - remove later
-async function testNotif() {
-  const { status } = await Notifications.getPermissionsAsync();
-  console.log("[NOTIF] permission status:", status);
-  alert("Permission: " + status);
-  await Notifications.scheduleNotificationAsync({
-    content: { title: '✈️ Heathrow', body: '£7 due · Pay by midnight tomorrow' },
-    trigger: { type: 'timeInterval', seconds: 2, repeats: false } as any,
-  });
-}
-
-async function simulateOxford() {
-  await handleLocationUpdate({ latitude: 51.7535, longitude: -1.2649 });
-}
-
-async function simulateHeathrow() {
-  
-  await handleLocationUpdate({ latitude: 51.4713, longitude: -0.4523 });
-}
