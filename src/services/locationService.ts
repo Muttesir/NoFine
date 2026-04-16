@@ -1,8 +1,12 @@
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
+import { handleZoneDetection, setConfirmationCallback } from './dropoffDetection';
 import { Storage } from './storage';
 import { ZONES, API } from './api';
 import { NotificationService } from './notifications';
+
+const BACKGROUND_TASK = 'nofine-background-location';
 
 const insideZones = new Set<string>();
 const entryTimes: Record<string, number> = {};
@@ -30,6 +34,13 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
     const inside = dist <= zone.radiusKm;
     const wasInside = insideZones.has(zone.id);
 
+    // Use smart detection for airports, simple for CCZ/ULEZ
+    const useSmartDetection = zone.chargeType === 'per_entry' || zone.chargeType === 'by_duration';
+    
+    if (useSmartDetection) {
+      handleZoneDetection(zone.id, zone.name, zone.fee, zone.penaltyFee, zone.payUrl, inside, Date.now());
+    }
+
     if (inside && !wasInside) {
       insideZones.add(zone.id);
       entryTimes[zone.id] = Date.now();
@@ -41,7 +52,7 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
 
       console.log(`[GPS] ENTERED: ${zone.name}`);
 
-      if (zone.chargeType === 'per_entry' || zone.chargeType === 'daily') {
+      if (!useSmartDetection && zone.chargeType === 'daily') {
         try {
           const result = await API.zoneEntry(user.plate, zone.id);
           const charges = await Storage.getCharges();
@@ -58,15 +69,14 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
             paid: false,
           });
           await Storage.saveCharges(charges);
-          console.log("[NOTIF] sending zone entry notification"); await NotificationService.zoneEntry(zone.name, zone.fee, result.deadline);
-          await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, result.deadline);
-          const before = await Storage.getCharges();
-          console.log("[BADGE] charges in storage before:", before.length);
-          const freshCharges = before;
+          const freshCharges = await Storage.getCharges();
           const unpaidCount = freshCharges.filter((c: any) => !c.paid).length;
           console.log("[BADGE] unpaid count:", unpaidCount);
           await Notifications.setBadgeCountAsync(unpaidCount);
-console.log(`[GPS] Charge created: £${zone.fee}`);
+          console.log("[NOTIF] sending zone entry notification"); 
+          await NotificationService.zoneEntry(zone.name, zone.fee, result.deadline);
+          await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, result.deadline);
+          console.log(`[GPS] Charge created: £${zone.fee}`);
         } catch (e) {
           console.log('[GPS] entry error:', e);
         }
@@ -114,27 +124,76 @@ console.log(`[GPS] Charge created: £${zone.fee}`);
   }
 }
 
-let subscription: Location.LocationSubscription | null = null;
+// Background task — PRODUCTION
+if (!TaskManager.isTaskDefined(BACKGROUND_TASK)) {
+  TaskManager.defineTask(BACKGROUND_TASK, async ({ data, error }: any) => {
+    if (error) { console.log('[GPS] background error:', error); return; }
+    const { locations } = data;
+    if (!locations?.[0]) return;
+    await handleLocationUpdate(locations[0].coords);
+  });
+}
+
+let foregroundSub: Location.LocationSubscription | null = null;
 
 export const LocationService = {
   start: async (): Promise<boolean> => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return false;
-      if (subscription) return true;
-      subscription = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
-        (loc) => handleLocationUpdate(loc.coords)
-      );
-      console.log('[GPS] Started');
+      const { status: fg } = await Location.requestForegroundPermissionsAsync();
+      if (fg !== 'granted') return false;
+
+      const { status: bg } = await Location.requestBackgroundPermissionsAsync();
+      
+      if (bg === 'granted') {
+        // Background mode
+        const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);
+        if (!isRunning) {
+          await Location.startLocationUpdatesAsync(BACKGROUND_TASK, {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 10,
+            timeInterval: 5000,
+            showsBackgroundLocationIndicator: true,
+            pausesUpdatesAutomatically: false,
+          });
+          console.log('[GPS] Background started');
+        }
+      } else {
+        // Foreground only
+        if (!foregroundSub) {
+          foregroundSub = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+            (loc) => handleLocationUpdate(loc.coords)
+          );
+          console.log('[GPS] Foreground started');
+        }
+      }
       return true;
     } catch (e) {
       console.log('[GPS] start error:', e);
-      return false;
+      // Fallback to foreground
+      try {
+        if (!foregroundSub) {
+          foregroundSub = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+            (loc) => handleLocationUpdate(loc.coords)
+          );
+          console.log('[GPS] Fallback foreground started');
+        }
+        return true;
+      } catch (e2) {
+        console.log('[GPS] fallback error:', e2);
+        return false;
+      }
     }
   },
-  stop: () => {
-    if (subscription) { subscription.remove(); subscription = null; }
-    console.log('[GPS] Stopped');
+
+  stop: async () => {
+    try {
+      if (foregroundSub) { foregroundSub.remove(); foregroundSub = null; }
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);
+      if (isRunning) await Location.stopLocationUpdatesAsync(BACKGROUND_TASK);
+    } catch (e) {
+      console.log('[GPS] stop error:', e);
+    }
   },
 };

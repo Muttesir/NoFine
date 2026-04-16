@@ -82,7 +82,7 @@ export default function TrackingScreen({ user, gpsEnabled }: { user: UserData; g
             <View>
               <Text style={s.zoneName}>Oxford Congestion & ZEZ</Text>
               <Text style={s.zoneDist}>
-                {oxfordDist !== null ? `${oxfordDist.toFixed(1)}km away` : 'Locating...'}
+                {oxfordDist !== null ? `${oxfordDist.toFixed(1)}miles away` : 'Locating...'}
               </Text>
               <Text style={[s.zoneStatus, { color: oxfordActive ? COLORS.amber : COLORS.muted }]}>
                 {oxfordActive ? '● Charge active now' : '● No charge now'}
@@ -100,7 +100,7 @@ export default function TrackingScreen({ user, gpsEnabled }: { user: UserData; g
         <Text style={[s.sectionLabel, { marginTop: 20 }]}>LONDON</Text>
         {sortedLondon.map(zone => {
           const dist = getDist(zone.lat, zone.lng);
-          const distText = dist === null ? 'Locating...' : dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
+          const distText = dist === null ? 'Locating...' : dist < 1 ? `${Math.round(dist * 1609)}ft` : `${(dist * 0.621371).toFixed(1)} miles`;
           const active = isChargeActive(zone.id);
           return (
             <View key={zone.id} style={s.row}>

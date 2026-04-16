@@ -85,9 +85,9 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
           )}
 
           <View style={s.statsRow}>
-            <StatBox label="Saved" value="£0" color={COLORS.green} />
-            <StatBox label="Trips" value="0" color={COLORS.blue} />
-            <StatBox label="Missed" value="0" color={COLORS.red} />
+            <StatBox label="Saved" value={`£${charges.filter(c => c.paid).reduce((s,c) => s+c.fee, 0).toFixed(0)}`} color={COLORS.green} />
+            <StatBox label="Trips" value={`${charges.length}`} color={COLORS.blue} />
+            <StatBox label="Missed" value={`${unpaid.filter(c => new Date(c.deadline).getTime() < Date.now()).length}`} color={COLORS.red} />
           </View>
 
           {/* GPS Toggle */}
@@ -109,7 +109,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
           <View style={s.zoneGrid}>
             {sortedLondon.map(z => {
               const dist = getDist(z.lat, z.lng);
-              const distText = dist === null ? '...' : dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
+              const distText = dist === null ? '...' : dist < 1 ? `${Math.round(dist * 1609)}ft` : `${(dist * 0.621371).toFixed(1)} miles`;
               const isNear = dist !== null && dist < 5;
               return (
                 <View key={z.id} style={[s.zoneCard, isNear && s.zoneCardNear]}>
@@ -137,7 +137,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
                 <Text style={s.oxfordName}>Oxford Congestion & ZEZ</Text>
                 <Text style={s.oxfordNote}>ZEZ £4-20 · CCZ £5/day · 07:00-19:00</Text>
                 <Text style={s.oxfordDist}>
-                  {oxfordDist !== null ? `${oxfordDist.toFixed(1)}km away` : 'Locating...'}
+                  {oxfordDist !== null ? `${oxfordDist.toFixed(1)}miles away` : 'Locating...'}
                 </Text>
               </View>
             </View>
