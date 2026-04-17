@@ -65,25 +65,6 @@ export default function App() {
           <NavTab icon="📋" label="History" active={tab === "history"} onPress={() => setTab("history")} />
         </View>
 
-        {/* Test buttons */}
-        <View style={s.testBtns}>
-          {[
-            { id: "heathrow", name: "Heathrow", fee: 7, pen: 80, url: "https://heathrowdropoff.apcoa.com" },
-            { id: "gatwick", name: "Gatwick", fee: 10, pen: 100, url: "https://www.gatwickairport.com" },
-            { id: "stansted", name: "Stansted", fee: 10, pen: 100, url: "https://pay.stanstedairport.com" },
-            { id: "luton", name: "Luton", fee: 7, pen: 95, url: "https://lutondropoff.apcoa.com" },
-            { id: "london_city", name: "London City", fee: 8, pen: 80, url: "https://www.londoncityairport.com" },
-          ].map(z => (
-            <TouchableOpacity
-              key={z.id}
-              style={s.testBtn}
-              onPress={() => DropoffService.simulate(z.id, z.name, z.fee, z.pen, z.url)}
-            >
-              <Text style={s.testBtnText}>✈️ {z.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         {/* Drop-off confirmation popup */}
         {pendingVisit && (
           <Modal visible={true} transparent animationType="fade">
@@ -108,7 +89,6 @@ export default function App() {
             </View>
           </Modal>
         )}
-
         <Modal visible={showSettings} animationType="slide" presentationStyle="pageSheet">
           <SettingsScreen user={user} onClose={() => { setShowSettings(false); loadUser(); }} onReset={() => { setShowSettings(false); setUser(null); }} />
         </Modal>
@@ -132,9 +112,6 @@ const s = StyleSheet.create({
   nav: { flexDirection: "row", backgroundColor: COLORS.surface, borderTopWidth: 1, borderColor: COLORS.border, paddingBottom: 28, paddingTop: 10 },
   navTab: { flex: 1, alignItems: "center", gap: 4 },
   navLabel: { fontSize: 10, fontWeight: "600" },
-  testBtns: { position: "absolute", bottom: 100, right: 10, gap: 4 },
-  testBtn: { backgroundColor: "#F5A623", padding: 7, borderRadius: 8 },
-  testBtnText: { color: "#000", fontWeight: "800", fontSize: 10 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", padding: 24 },
   popup: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: COLORS.amber + "88", alignItems: "center" },
   popupEmoji: { fontSize: 40, marginBottom: 8 },

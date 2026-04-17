@@ -14,8 +14,7 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-const LONDON_ZONES = ZONES.filter(z => z && z.id && !z.id.startsWith('oxford'));
-const OXFORD_ZONES = ZONES.filter(z => z && z.id && z.id.startsWith('oxford'));
+const LONDON_ZONES = ZONES.filter(z => z && z.id);
 
 export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleGPS }: { user: UserData; onOpenSettings: () => void; gpsEnabled: boolean; onToggleGPS: () => void }) {
   const [charges, setCharges] = useState<Charge[]>([]);
@@ -48,7 +47,6 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
     return da - db;
   });
 
-  const oxfordDist = coords ? Math.min(...OXFORD_ZONES.map(z => haversine(coords.latitude, coords.longitude, z.lat, z.lng))) : null;
 
   return (
     <SafeAreaView style={s.root}>
@@ -124,28 +122,6 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
               );
             })}
           </View>
-
-          {/* Oxford Section — tek kart */}
-          <Text style={[s.sectionTitle, { marginTop: 20, marginBottom: 12 }]}>Oxford</Text>
-          <TouchableOpacity
-            style={s.oxfordCard}
-            onPress={() => Linking.openURL('https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge')}
-          >
-            <View style={s.oxfordLeft}>
-              <Text style={s.oxfordEmoji}>🚦</Text>
-              <View>
-                <Text style={s.oxfordName}>Oxford Congestion & ZEZ</Text>
-                <Text style={s.oxfordNote}>ZEZ £4-20 · CCZ £5/day · 07:00-19:00</Text>
-                <Text style={s.oxfordDist}>
-                  {oxfordDist !== null ? `${oxfordDist.toFixed(1)}miles away` : 'Locating...'}
-                </Text>
-              </View>
-            </View>
-            <View style={s.oxfordRight}>
-              <Text style={s.oxfordPay}>Pay →</Text>
-            </View>
-          </TouchableOpacity>
-          <Text style={s.oxfordHint}>GPS monitors 6 CCZ points + ZEZ automatically</Text>
 
         </View>
       </ScrollView>
@@ -235,14 +211,5 @@ const s = StyleSheet.create({
   zoneCardName: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 4 },
   zoneCardFee: { fontSize: 20, fontWeight: '900', color: COLORS.amber },
   zoneCardDist: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
-  oxfordCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: COLORS.border },
-  oxfordLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  oxfordEmoji: { fontSize: 28 },
-  oxfordName: { fontSize: 14, fontWeight: '700', color: COLORS.text },
-  oxfordNote: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
-  oxfordDist: { fontSize: 11, color: COLORS.amber, marginTop: 3 },
-  oxfordRight: { paddingLeft: 8 },
-  oxfordPay: { fontSize: 14, fontWeight: '700', color: COLORS.blue },
-  oxfordHint: { fontSize: 11, color: COLORS.dim, marginTop: 8, textAlign: 'center' },
 });
 // TEST - remove later

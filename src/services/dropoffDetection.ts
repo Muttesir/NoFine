@@ -3,7 +3,7 @@ import * as Notifications from "expo-notifications";
 import { Storage } from "./storage";
 import { DROPOFF_ZONES, API } from "./api";
 
-const TEST_MODE = true;
+const TEST_MODE = false;
 const STABILITY_MS = TEST_MODE ? 1000 : 30000;
 const COOLDOWN_MS = TEST_MODE ? 5000 : 600000;
 
@@ -154,9 +154,4 @@ export const DropoffService = {
     } catch (e) { console.log("[DROPOFF] start error:", e); return false; }
   },
   stop: () => { if (subscription) { subscription.remove(); subscription = null; } },
-  simulate: (zoneId: string, zoneName: string, fee: number, penaltyFee: number, payUrl: string) => {
-    if (dropoffCallback) {
-      dropoffCallback({ zoneId, zoneName, fee, penaltyFee, payUrl, entryTime: Date.now() - 300000, exitTime: Date.now(), durationMin: 5 });
-    }
-  },
 };
