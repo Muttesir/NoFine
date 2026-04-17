@@ -89,27 +89,6 @@ export default function App() {
             </View>
           </Modal>
         )}
-        <View style={{ position: 'absolute', bottom: 100, right: 10, zIndex: 999, gap: 4 }}>
-          {[
-            { id: "heathrow_t2", name: "LHR T2", fee: 7, pen: 80, url: "https://heathrowdropoff.apcoa.com/trip/vrn" },
-            { id: "heathrow_t3", name: "LHR T3", fee: 7, pen: 80, url: "https://heathrowdropoff.apcoa.com/trip/vrn" },
-            { id: "heathrow_t4", name: "LHR T4", fee: 7, pen: 80, url: "https://heathrowdropoff.apcoa.com/trip/vrn" },
-            { id: "heathrow_t5", name: "LHR T5", fee: 7, pen: 80, url: "https://heathrowdropoff.apcoa.com/trip/vrn" },
-            { id: "gatwick_north", name: "GTW N", fee: 10, pen: 100, url: "https://www.gatwickairport.com" },
-            { id: "gatwick_south", name: "GTW S", fee: 10, pen: 100, url: "https://www.gatwickairport.com" },
-            { id: "stansted", name: "STN", fee: 10, pen: 100, url: "https://pay.stanstedairport.com" },
-            { id: "luton", name: "LTN", fee: 7, pen: 95, url: "https://lutondropoff.apcoa.com" },
-            { id: "london_city", name: "LCY", fee: 8, pen: 80, url: "https://www.londoncityairport.com" },
-          ].map(z => (
-            <TouchableOpacity
-              key={z.id}
-              style={{ backgroundColor: '#F5A623', padding: 6, borderRadius: 6 }}
-              onPress={() => setPendingVisit({ zoneId: z.id, zoneName: z.name, fee: z.fee, penaltyFee: z.pen, payUrl: z.url, entryTime: Date.now() - 300000, exitTime: Date.now(), durationMin: 5 })}
-            >
-              <Text style={{ color: '#000', fontWeight: '800', fontSize: 9 }}>✈️ {z.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
         <Modal visible={showSettings} animationType="slide" presentationStyle="pageSheet">
           <SettingsScreen user={user} onClose={() => { setShowSettings(false); loadUser(); }} onReset={() => { setShowSettings(false); setUser(null); }} />
         </Modal>
