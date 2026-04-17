@@ -1,4 +1,3 @@
-import { handleLocationUpdate } from '../services/locationService';
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, RefreshControl, Linking, Switch } from 'react-native';
 import * as Location from 'expo-location';
@@ -23,7 +22,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
 
   const load = useCallback(async () => {
     const c = await Storage.getCharges();
-    setCharges(c.filter(x => !x.paid));
+    setCharges(c);
   }, []);
 
   useEffect(() => {
@@ -60,7 +59,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
             <Text style={s.name}>{user.name}</Text>
           </View>
           <View style={s.headerRight}>
-            <TouchableOpacity style={s.plateBox}>
+            <TouchableOpacity style={s.plateBox} onPress={onOpenSettings}>
               <Text style={s.plate}>{user.plate}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.settingsBtn} onPress={onOpenSettings}>
@@ -83,15 +82,15 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
           )}
 
           <View style={s.statsRow}>
-            <StatBox label="Saved" value={`£${charges.filter(c => c.paid).reduce((s,c) => s+c.fee, 0).toFixed(0)}`} color={COLORS.green} />
-            <StatBox label="Trips" value={`${charges.length}`} color={COLORS.blue} />
-            <StatBox label="Missed" value={`${unpaid.filter(c => new Date(c.deadline).getTime() < Date.now()).length}`} color={COLORS.red} />
+            <StatBox label="Penalties Avoided" value={`£${charges.filter(c => c.paid).reduce((s,c) => s+c.penaltyFee, 0).toFixed(0)}`} color={COLORS.green} />
+            <StatBox label="This Month" value={`${charges.filter(c => new Date(c.enteredAt).getMonth() === new Date().getMonth()).length}`} color={COLORS.blue} />
+            <StatBox label="Overdue" value={`${unpaid.filter(c => new Date(c.deadline).getTime() < Date.now()).length}`} color={COLORS.red} />
           </View>
 
           {/* GPS Toggle */}
           <View style={s.gpsRow}>
             <View>
-                                          <Text style={s.gpsLabel}>GPS Monitoring</Text>
+              <Text style={s.gpsLabel}>GPS Monitoring</Text>
               <Text style={s.gpsSub}>Detect charge zones automatically</Text>
             </View>
             <Switch
@@ -212,4 +211,3 @@ const s = StyleSheet.create({
   zoneCardFee: { fontSize: 20, fontWeight: '900', color: COLORS.amber },
   zoneCardDist: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
 });
-// TEST - remove later

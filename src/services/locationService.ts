@@ -1,7 +1,6 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
-import { handleZoneDetection, setConfirmationCallback } from './dropoffDetection';
 import { Storage } from './storage';
 import { ZONES, API } from './api';
 import { NotificationService } from './notifications';
@@ -36,11 +35,6 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
 
     // Use smart detection for airports, simple for CCZ/ULEZ
     const useSmartDetection = zone.chargeType === 'per_entry' || zone.chargeType === 'by_duration';
-    
-    if (useSmartDetection) {
-      const ts = Date.now();
-      handleZoneDetection(zone.id, zone.name, zone.fee, zone.penaltyFee, zone.payUrl, inside, ts);
-    }
 
     if (inside && !wasInside) {
       insideZones.add(zone.id);

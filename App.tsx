@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Modal, ActivityIndicator, AppState } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Storage, UserData } from "./src/services/storage";
 import OnboardingScreen from "./src/screens/OnboardingScreen";
@@ -10,6 +10,7 @@ import SettingsScreen from "./src/screens/SettingsScreen";
 import { COLORS } from "./src/services/api";
 import { DropoffService, onDropoffDetected, confirmDropoff, discardDropoff, DropoffVisit } from "./src/services/dropoffDetection";
 import { NotificationService, scheduleMidnightReminder } from "./src/services/notifications";
+import * as Notifications from "expo-notifications";
 
 type Tab = "home" | "tracking" | "history";
 
@@ -22,6 +23,12 @@ export default function App() {
   const [pendingVisit, setPendingVisit] = useState<DropoffVisit | null>(null);
   const started = useRef(false);
 
+  // Pending visit kontrolü — app açılınca veya foreground'a gelince
+  const checkPendingVisit = async () => {
+    const pending = await Storage.getPendingVisit();
+    if (pending) setPendingVisit(pending);
+  };
+
   const loadUser = async () => {
     try {
       const u = await Storage.getUser();
@@ -33,6 +40,8 @@ export default function App() {
         onDropoffDetected((visit) => setPendingVisit(visit));
         await DropoffService.start();
       }
+      // App açılınca pending visit var mı bak
+      await checkPendingVisit();
     } catch (e) {
       console.log("loadUser error:", e);
     } finally {
@@ -40,7 +49,27 @@ export default function App() {
     }
   };
 
-  useEffect(() => { loadUser(); }, []);
+  useEffect(() => {
+    loadUser();
+
+    // Notification'a tıklanınca app foreground'a gelir — pending visit'i göster
+    const notifSub = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      const data = response.notification.request.content.data as any;
+      if (data?.type === "dropoff_pending") {
+        await checkPendingVisit();
+      }
+    });
+
+    // App background'dan foreground'a gelince kontrol et
+    const appStateSub = AppState.addEventListener("change", async (state) => {
+      if (state === "active") await checkPendingVisit();
+    });
+
+    return () => {
+      notifSub.remove();
+      appStateSub.remove();
+    };
+  }, []);
 
   if (loading) return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: "center", alignItems: "center" }}>
@@ -54,7 +83,11 @@ export default function App() {
     <SafeAreaProvider>
       <View style={s.root}>
         <View style={s.content}>
-          {tab === "home" && <HomeScreen user={user} onOpenSettings={() => setShowSettings(true)} gpsEnabled={gpsEnabled} onToggleGPS={() => setGpsEnabled(p => !p)} />}
+          {tab === "home" && <HomeScreen user={user} onOpenSettings={() => setShowSettings(true)} gpsEnabled={gpsEnabled} onToggleGPS={async () => {
+            const next = !gpsEnabled;
+            setGpsEnabled(next);
+            if (next) { await DropoffService.start(); } else { await DropoffService.stop(); }
+          }} />}
           {tab === "tracking" && <TrackingScreen user={user} gpsEnabled={gpsEnabled} />}
           {tab === "history" && <HistoryScreen />}
         </View>
@@ -79,10 +112,10 @@ export default function App() {
                 </Text>
                 <Text style={s.popupDuration}>{Math.round(pendingVisit.durationMin)} min</Text>
                 <Text style={s.popupQuestion}>Did you drop off passengers?</Text>
-                <TouchableOpacity style={s.yesBtn} onPress={() => { confirmDropoff(pendingVisit!); setPendingVisit(null); loadUser(); }}>
+                <TouchableOpacity style={s.yesBtn} onPress={async () => { await confirmDropoff(pendingVisit!); await Storage.clearPendingVisit(); setPendingVisit(null); loadUser(); }}>
                   <Text style={s.yesBtnText}>Yes — Record £{pendingVisit.fee.toFixed(2)}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.noBtn} onPress={() => { discardDropoff(); setPendingVisit(null); }}>
+                <TouchableOpacity style={s.noBtn} onPress={async () => { discardDropoff(); await Storage.clearPendingVisit(); setPendingVisit(null); }}>
                   <Text style={s.noBtnText}>No — Not a drop-off</Text>
                 </TouchableOpacity>
               </View>

@@ -66,7 +66,6 @@ export const ZONES = [
     note: '£12.50/day · 24/7',
     payUrl: 'https://tfl.gov.uk/modes/driving/ultra-low-emission-zone/check-if-you-need-to-pay',
   },
-  ,
 ];
 
 export const DROPOFF_ZONES = [

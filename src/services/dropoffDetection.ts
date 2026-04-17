@@ -5,7 +5,7 @@ const BACKGROUND_TASK = "nofine-dropoff-task";
 
 // Define background task OUTSIDE component
 if (!TaskManager.isTaskDefined(BACKGROUND_TASK)) {
-  TaskManager.defineTask(BACKGROUND_TASK, ({ data, error }: any) => {
+  TaskManager.defineTask(BACKGROUND_TASK, async ({ data, error }: any) => {
     if (error) { console.log("[BG] error:", error); return; }
     const { locations } = data;
     if (locations?.[0]) handleLocation(locations[0].coords);
@@ -18,6 +18,87 @@ import { DROPOFF_ZONES, API } from "./api";
 const TEST_MODE = false;
 const STABILITY_MS = TEST_MODE ? 1000 : 30000;
 const COOLDOWN_MS = TEST_MODE ? 5000 : 600000;
+
+// ─── CCZ Daily Charge ────────────────────────────────────────────────────────
+const CCZ_ZONE = {
+  id: "ccz",
+  name: "Congestion Charge Zone",
+  lat: 51.5155,
+  lng: -0.1100,
+  radiusKm: 2.8,
+  fee: 15,
+  penaltyFee: 160,
+  payUrl: "https://tfl.gov.uk/modes/driving/congestion-charge/pay-or-register-a-congestion-charge",
+};
+
+// Bugün CCZ charge zaten oluşturuldu mu?
+let cczChargedDate: string | null = null;
+let cczIsInside = false;
+
+function todayKey(): string {
+  return new Date().toDateString(); // "Fri Apr 17 2026"
+}
+
+function isCCZActive(): boolean {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (day === 0) return false;                         // Pazar — ücretsiz
+  if (day === 6) return mins >= 720 && mins < 1080;    // Cumartesi 12:00–18:00
+  return mins >= 420 && mins < 1080;                   // Pzt–Cum 07:00–18:00
+}
+
+async function handleCCZEntry(): Promise<void> {
+  try {
+    if (!isCCZActive()) {
+      console.log("[CCZ] Charge saati değil, geçildi");
+      return;
+    }
+    if (cczChargedDate === todayKey()) {
+      console.log("[CCZ] Bugün zaten charge oluşturuldu");
+      return;
+    }
+    cczChargedDate = todayKey();
+
+    const user = await Storage.getUser();
+    if (!user) return;
+
+    const deadline = new Date();
+    deadline.setHours(23, 59, 59, 999);
+
+    const charges = await Storage.getCharges();
+    charges.push({
+      id: Date.now().toString(),
+      zoneId: CCZ_ZONE.id,
+      zoneName: CCZ_ZONE.name,
+      plate: user.plate,
+      enteredAt: new Date().toISOString(),
+      fee: CCZ_ZONE.fee,
+      penaltyFee: CCZ_ZONE.penaltyFee,
+      deadline: deadline.toISOString(),
+      payUrl: CCZ_ZONE.payUrl,
+      paid: false,
+    });
+    await Storage.saveCharges(charges);
+
+    const unpaid = charges.filter((c: any) => !c.paid).length;
+    await Notifications.setBadgeCountAsync(unpaid);
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🚧 Congestion Charge Zone",
+        body: `£${CCZ_ZONE.fee} due today · Pay before midnight to avoid £${CCZ_ZONE.penaltyFee} penalty`,
+        sound: true,
+      },
+      trigger: { type: "timeInterval", seconds: 2, repeats: false } as any,
+    });
+
+    try { await API.zoneEntry(user.plate, CCZ_ZONE.id); } catch (e) {}
+    console.log("[CCZ] Charge oluşturuldu: £" + CCZ_ZONE.fee);
+  } catch (e) {
+    console.log("[CCZ] handleCCZEntry error:", e);
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface DropoffVisit {
   zoneId: string;
@@ -37,6 +118,36 @@ let entryCandidateAt: number | null = null;
 let exitCandidateAt: number | null = null;
 let cooldownUntil = 0;
 let dropoffCallback: ((visit: DropoffVisit) => void) | null = null;
+let stateLoaded = false;
+
+// App kapanıp background task yeniden başlayınca state'i geri yükle
+async function loadPersistedState() {
+  if (stateLoaded) return;
+  stateLoaded = true;
+  try {
+    const s = await Storage.getGPSState();
+    if (!s) return;
+    isInsideZone = s.isInsideZone ?? false;
+    currentZone = s.currentZone ?? null;
+    entryTime = s.entryTime ?? null;
+    entryCandidateAt = s.entryCandidateAt ?? null;
+    exitCandidateAt = s.exitCandidateAt ?? null;
+    cooldownUntil = s.cooldownUntil ?? 0;
+    cczIsInside = s.cczIsInside ?? false;
+    cczChargedDate = s.cczChargedDate ?? null;
+    console.log("[STATE] Restored:", isInsideZone ? `inside ${currentZone?.name}` : "outside");
+  } catch (e) { console.log("[STATE] restore error:", e); }
+}
+
+async function persistState() {
+  try {
+    await Storage.saveGPSState({
+      isInsideZone, currentZone, entryTime,
+      entryCandidateAt, exitCandidateAt, cooldownUntil,
+      cczIsInside, cczChargedDate,
+    });
+  } catch (e) { console.log("[STATE] persist error:", e); }
+}
 
 export function onDropoffDetected(cb: (visit: DropoffVisit) => void) {
   dropoffCallback = cb;
@@ -60,8 +171,26 @@ function findZone(lat: number, lon: number): any | null {
   return null;
 }
 
-function handleLocation(coords: { latitude: number; longitude: number }) {
+async function handleLocation(coords: { latitude: number; longitude: number }) {
+  // App kapanıp background task başlarsa state'i geri yükle (sadece ilk kez)
+  await loadPersistedState();
+
   const now = Date.now();
+
+  // ── CCZ günlük ücret kontrolü ──
+  const cczDist = haversine(coords.latitude, coords.longitude, CCZ_ZONE.lat, CCZ_ZONE.lng);
+  const insideCCZ = cczDist <= CCZ_ZONE.radiusKm;
+  if (insideCCZ && !cczIsInside) {
+    cczIsInside = true;
+    console.log("[CCZ] Zone'a girildi");
+    handleCCZEntry(); // async, fire-and-forget
+  }
+  if (!insideCCZ && cczIsInside) {
+    cczIsInside = false;
+    console.log("[CCZ] Zone'dan çıkıldı");
+  }
+  // ──────────────────────────────
+
   if (now < cooldownUntil) return;
 
   const zone = findZone(coords.latitude, coords.longitude);
@@ -74,17 +203,20 @@ function handleLocation(coords: { latitude: number; longitude: number }) {
     exitCandidateAt = null;
     entryTime = null;
     console.log("[DROPOFF] Entered zone:", zone.name);
+    await persistState();
   }
 
   if (isInsideZone && entryTime === null && entryCandidateAt && now - entryCandidateAt >= STABILITY_MS) {
     entryTime = entryCandidateAt;
     console.log("[DROPOFF] Entry confirmed:", currentZone?.name);
+    await persistState();
   }
 
   if (!inside && isInsideZone) {
     if (!exitCandidateAt) {
       exitCandidateAt = now;
       console.log("[DROPOFF] Exited zone:", currentZone?.name);
+      await persistState();
     }
     if (now - exitCandidateAt >= STABILITY_MS) {
       const exitT = exitCandidateAt;
@@ -96,14 +228,30 @@ function handleLocation(coords: { latitude: number; longitude: number }) {
       entryCandidateAt = null;
       exitCandidateAt = null;
       cooldownUntil = now + COOLDOWN_MS;
+      await persistState();
       if (!entryT || !z) { console.log("[DROPOFF] No entry, ignoring"); return; }
       const durationMin = (exitT - entryT) / 60000;
       console.log("[DROPOFF] Duration:", durationMin.toFixed(1), "min");
       if (durationMin < 2) { console.log("[DROPOFF] Too short"); return; }
       if (durationMin > 15) { console.log("[DROPOFF] Parking"); return; }
       console.log("[DROPOFF] Valid:", z.name);
+      const visit: DropoffVisit = { zoneId: z.id, zoneName: z.name, fee: z.fee, penaltyFee: z.penaltyFee, payUrl: z.payUrl, entryTime: entryT, exitTime: exitT, durationMin };
+
+      // Her zaman storage'a kaydet + notification gönder (app kapalı olsa bile çalışır)
+      await Storage.savePendingVisit(visit);
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `✈️ ${z.name} — Drop-off yaptınız mı?`,
+          body: `${Math.round(durationMin)} dk · £${z.fee.toFixed(2)} ödenmesi gerekebilir · Kontrol etmek için dokunun`,
+          sound: true,
+          data: { type: "dropoff_pending" },
+        },
+        trigger: { type: "timeInterval", seconds: 1, repeats: false } as any,
+      });
+
+      // App açıksa popup da göster
       if (dropoffCallback) {
-        dropoffCallback({ zoneId: z.id, zoneName: z.name, fee: z.fee, penaltyFee: z.penaltyFee, payUrl: z.payUrl, entryTime: entryT, exitTime: exitT, durationMin });
+        dropoffCallback(visit);
       }
     }
   }
