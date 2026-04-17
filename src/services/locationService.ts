@@ -38,7 +38,8 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
     const useSmartDetection = zone.chargeType === 'per_entry' || zone.chargeType === 'by_duration';
     
     if (useSmartDetection) {
-      handleZoneDetection(zone.id, zone.name, zone.fee, zone.penaltyFee, zone.payUrl, inside, Date.now());
+      const ts = Date.now();
+      handleZoneDetection(zone.id, zone.name, zone.fee, zone.penaltyFee, zone.payUrl, inside, ts);
     }
 
     if (inside && !wasInside) {

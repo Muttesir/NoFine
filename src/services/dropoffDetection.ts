@@ -1,59 +1,108 @@
+import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
+import { Storage } from "./storage";
+import { DROPOFF_ZONES, API } from "./api";
 
-// src/services/dropoffDetection.ts
-import { Storage } from './storage';
-import { NotificationService } from './notifications';
-import { API } from './api';
+const TEST_MODE = true;
+const STABILITY_MS = TEST_MODE ? 1000 : 30000;
+const COOLDOWN_MS = TEST_MODE ? 5000 : 600000;
 
-// ─── Types ───────────────────────────────────────────────────
-interface ZoneVisit {
+export interface DropoffVisit {
   zoneId: string;
   zoneName: string;
   fee: number;
   penaltyFee: number;
   payUrl: string;
   entryTime: number;
-  exitTime?: number;
+  exitTime: number;
+  durationMin: number;
 }
 
-interface DetectionState {
-  isInsideZone: boolean;
-  entryConfirmed: boolean;
-  entryTime: number | null;
-  activeVisit: ZoneVisit | null;
-  exitCandidateTime: number | null;
-  entryCandidateTime: number | null;
-  cooldownUntil: number;
+let isInsideZone = false;
+let currentZone: any = null;
+let entryTime: number | null = null;
+let entryCandidateAt: number | null = null;
+let exitCandidateAt: number | null = null;
+let cooldownUntil = 0;
+let dropoffCallback: ((visit: DropoffVisit) => void) | null = null;
+
+export function onDropoffDetected(cb: (visit: DropoffVisit) => void) {
+  dropoffCallback = cb;
 }
 
-// ─── State (per zone) ────────────────────────────────────────
-const states: Record<string, DetectionState> = {};
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-function getState(zoneId: string): DetectionState {
-  if (!states[zoneId]) {
-    states[zoneId] = {
-      isInsideZone: false,
-      entryConfirmed: false,
-      entryTime: null,
-      activeVisit: null,
-      exitCandidateTime: null,
-      entryCandidateTime: null,
-      cooldownUntil: 0,
-    };
+function findZone(lat: number, lon: number): any | null {
+  for (const zone of DROPOFF_ZONES) {
+    if (!zone) continue;
+    if (zone.type !== "INNER") continue;
+    const dist = haversine(lat, lon, zone.lat, zone.lng);
+    if (dist <= zone.radiusKm) return zone;
   }
-  return states[zoneId];
+  return null;
 }
 
-// ─── Confirmation callback (set by UI) ───────────────────────
-type ConfirmCallback = (visit: ZoneVisit) => void;
-let onConfirmationNeeded: ConfirmCallback | null = null;
+function handleLocation(coords: { latitude: number; longitude: number }) {
+  const now = Date.now();
+  if (now < cooldownUntil) return;
 
-export function setConfirmationCallback(cb: ConfirmCallback) {
-  onConfirmationNeeded = cb;
+  const zone = findZone(coords.latitude, coords.longitude);
+  const inside = zone !== null;
+
+  if (inside && !isInsideZone) {
+    isInsideZone = true;
+    currentZone = zone;
+    entryCandidateAt = now;
+    exitCandidateAt = null;
+    entryTime = null;
+    console.log("[DROPOFF] Entered zone:", zone.name);
+  }
+
+  if (isInsideZone && entryTime === null && entryCandidateAt && now - entryCandidateAt >= STABILITY_MS) {
+    entryTime = entryCandidateAt;
+    console.log("[DROPOFF] Entry confirmed:", currentZone?.name);
+  }
+
+  if (!inside && isInsideZone) {
+    if (!exitCandidateAt) {
+      exitCandidateAt = now;
+      console.log("[DROPOFF] Exited zone:", currentZone?.name);
+    }
+    if (now - exitCandidateAt >= STABILITY_MS) {
+      const exitT = exitCandidateAt;
+      const entryT = entryTime;
+      const z = currentZone;
+      isInsideZone = false;
+      currentZone = null;
+      entryTime = null;
+      entryCandidateAt = null;
+      exitCandidateAt = null;
+      cooldownUntil = now + COOLDOWN_MS;
+      if (!entryT || !z) { console.log("[DROPOFF] No entry, ignoring"); return; }
+      const durationMin = (exitT - entryT) / 60000;
+      console.log("[DROPOFF] Duration:", durationMin.toFixed(1), "min");
+      if (durationMin < 2) { console.log("[DROPOFF] Too short"); return; }
+      if (durationMin > 15) { console.log("[DROPOFF] Parking"); return; }
+      console.log("[DROPOFF] Valid:", z.name);
+      if (dropoffCallback) {
+        dropoffCallback({ zoneId: z.id, zoneName: z.name, fee: z.fee, penaltyFee: z.penaltyFee, payUrl: z.payUrl, entryTime: entryT, exitTime: exitT, durationMin });
+      }
+    }
+  }
+
+  if (inside && exitCandidateAt) {
+    exitCandidateAt = null;
+    console.log("[DROPOFF] Re-entered, exit cancelled");
+  }
 }
 
-// ─── User answered YES ───────────────────────────────────────
-export async function confirmDropoff(visit: ZoneVisit) {
-  console.log('[DROPOFF] Drop-off confirmed:', visit.zoneName);
+export async function confirmDropoff(visit: DropoffVisit) {
   try {
     const user = await Storage.getUser();
     if (!user) return;
@@ -64,8 +113,8 @@ export async function confirmDropoff(visit: ZoneVisit) {
       zoneName: visit.zoneName,
       plate: user.plate,
       enteredAt: new Date(visit.entryTime).toISOString(),
-      exitedAt: visit.exitTime ? new Date(visit.exitTime).toISOString() : undefined,
-      durationMinutes: visit.exitTime ? Math.round((visit.exitTime - visit.entryTime) / 60000) : 0,
+      exitedAt: new Date(visit.exitTime).toISOString(),
+      durationMinutes: Math.round(visit.durationMin),
       fee: visit.fee,
       penaltyFee: visit.penaltyFee,
       deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -73,115 +122,41 @@ export async function confirmDropoff(visit: ZoneVisit) {
       paid: false,
     });
     await Storage.saveCharges(charges);
-    const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await NotificationService.zoneEntry(visit.zoneName, visit.fee, deadline);
-    await NotificationService.scheduleDeadlineReminder(visit.zoneName, visit.fee, deadline);
-    // Also notify backend
+    const unpaid = charges.filter((c: any) => !c.paid).length;
+    await Notifications.setBadgeCountAsync(unpaid);
+    await Notifications.scheduleNotificationAsync({
+      content: { title: `✈️ ${visit.zoneName}`, body: `£${visit.fee.toFixed(2)} due · Pay before midnight`, sound: true },
+      trigger: { type: "timeInterval", seconds: 2, repeats: false } as any,
+    });
     try { await API.zoneEntry(user.plate, visit.zoneId); } catch (e) {}
-    console.log('[DROPOFF] Charge saved: £' + visit.fee);
-  } catch (e) {
-    console.log('[DROPOFF] save error:', e);
-  }
+    console.log("[DROPOFF] Saved: £" + visit.fee);
+  } catch (e) { console.log("[DROPOFF] save error:", e); }
 }
 
-// ─── User answered NO ────────────────────────────────────────
-export function discardDropoff(visit: ZoneVisit) {
-  console.log('[DROPOFF] Discarded:', visit.zoneName);
+export function discardDropoff() {
+  console.log("[DROPOFF] Discarded");
 }
 
-// ─── Main detection function ─────────────────────────────────
-export function handleZoneDetection(
-  zoneId: string,
-  zoneName: string,
-  fee: number,
-  penaltyFee: number,
-  payUrl: string,
-  isCurrentlyInside: boolean,
-  now: number = Date.now()
-) {
-  const state = getState(zoneId);
+let subscription: Location.LocationSubscription | null = null;
 
-  // Skip if in cooldown
-  if (now < state.cooldownUntil) {
-    console.log('[DROPOFF] In cooldown, ignoring');
-    return;
-  }
-
-  // ── ENTRY LOGIC ──────────────────────────────────────────
-  if (isCurrentlyInside && !state.isInsideZone) {
-    // Just entered — start stability check
-    state.entryCandidateTime = now;
-    state.isInsideZone = true;
-    state.entryConfirmed = false;
-    state.exitCandidateTime = null;
-    console.log('[DROPOFF] Entered zone:', zoneName);
-  }
-
-  // Confirm entry after 30 seconds stability
-  if (
-    state.isInsideZone &&
-    !state.entryConfirmed &&
-    state.entryCandidateTime &&
-    now - state.entryCandidateTime >= 1000 // 1 sec for testing
-  ) {
-    state.entryConfirmed = true;
-    state.entryTime = state.entryCandidateTime;
-    state.activeVisit = { zoneId, zoneName, fee, penaltyFee, payUrl, entryTime: state.entryTime };
-    console.log('[DROPOFF] Stability confirmed:', zoneName);
-  }
-
-  // ── EXIT LOGIC ───────────────────────────────────────────
-  if (!isCurrentlyInside && state.isInsideZone) {
-    if (state.exitCandidateTime === null) {
-      state.exitCandidateTime = now;
-      console.log('[DROPOFF] Possible exit detected:', zoneName);
+export const DropoffService = {
+  start: async (): Promise<boolean> => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return false;
+      if (subscription) return true;
+      subscription = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+        (loc) => handleLocation(loc.coords)
+      );
+      console.log("[DROPOFF] Service started");
+      return true;
+    } catch (e) { console.log("[DROPOFF] start error:", e); return false; }
+  },
+  stop: () => { if (subscription) { subscription.remove(); subscription = null; } },
+  simulate: (zoneId: string, zoneName: string, fee: number, penaltyFee: number, payUrl: string) => {
+    if (dropoffCallback) {
+      dropoffCallback({ zoneId, zoneName, fee, penaltyFee, payUrl, entryTime: Date.now() - 300000, exitTime: Date.now(), durationMin: 5 });
     }
-
-    // Confirm exit after 30 seconds outside
-    if (now - state.exitCandidateTime >= 1000) { // 1 sec for testing
-      const exitTime = state.exitCandidateTime;
-      const visit = state.activeVisit;
-
-      // Reset state
-      state.isInsideZone = false;
-      state.entryConfirmed = false;
-      state.entryTime = null;
-      state.entryCandidateTime = null;
-      state.exitCandidateTime = null;
-      state.activeVisit = null;
-      state.cooldownUntil = now + 10 * 60 * 1000; // 10 min cooldown
-
-      if (!visit || !visit.entryTime) {
-        console.log('[DROPOFF] No active visit, ignoring');
-        return;
-      }
-
-      const duration = (exitTime - visit.entryTime) / 60000;
-      console.log('[DROPOFF] Duration:', duration.toFixed(1), 'min');
-
-      if (duration < 2) {
-        console.log('[DROPOFF] Ignored — too short (<2 min)');
-        return;
-      }
-
-      if (duration > 15) {
-        console.log('[DROPOFF] Ignored as parking (>15 min)');
-        return;
-      }
-
-      // Valid drop-off window (2-15 min)
-      console.log('[DROPOFF] Marked as drop-off —', zoneName);
-      const finalVisit: ZoneVisit = { ...visit, exitTime };
-
-      if (onConfirmationNeeded) {
-        onConfirmationNeeded(finalVisit);
-      }
-    }
-  }
-
-  // User came back before exit was confirmed
-  if (isCurrentlyInside && state.exitCandidateTime !== null) {
-    console.log('[DROPOFF] Re-entered zone, cancelling exit');
-    state.exitCandidateTime = null;
-  }
-}
+  },
+};

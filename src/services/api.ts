@@ -109,3 +109,13 @@ export const ZONES = [
     payUrl: 'https://www.oxfordshire.gov.uk/transport-and-travel/oxfords-temporary-congestion-charge-cars/pay-congestion-charge',
   },
 ];
+
+export const DROPOFF_ZONES = [
+  { id: "heathrow_t2_t3", name: "Heathrow T2/T3", lat: 51.4710, lng: -0.4543, radiusKm: 0.22, fee: 7, penaltyFee: 80, payUrl: "https://heathrowdropoff.apcoa.com/trip/vrn", type: "INNER" },
+  { id: "heathrow_t4", name: "Heathrow T4", lat: 51.4598, lng: -0.4455, radiusKm: 0.2, fee: 7, penaltyFee: 80, payUrl: "https://heathrowdropoff.apcoa.com/trip/vrn", type: "INNER" },
+  { id: "heathrow_t5", name: "Heathrow T5", lat: 51.4700, lng: -0.4900, radiusKm: 0.22, fee: 7, penaltyFee: 80, payUrl: "https://heathrowdropoff.apcoa.com/trip/vrn", type: "INNER" },
+  { id: "gatwick", name: "Gatwick", lat: 51.1537, lng: -0.1821, radiusKm: 0.25, fee: 10, penaltyFee: 100, payUrl: "https://www.gatwickairport.com/transport-options/drop-off", type: "INNER" },
+  { id: "stansted", name: "Stansted", lat: 51.8850, lng: 0.2342, radiusKm: 0.25, fee: 10, penaltyFee: 100, payUrl: "https://pay.stanstedairport.com", type: "INNER" },
+  { id: "luton", name: "Luton", lat: 51.8747, lng: -0.3683, radiusKm: 0.25, fee: 7, penaltyFee: 95, payUrl: "https://lutondropoff.apcoa.com/latepaysearch/vrnsearch", type: "INNER" },
+  { id: "london_city", name: "London City", lat: 51.5048, lng: 0.0495, radiusKm: 0.2, fee: 8, penaltyFee: 80, payUrl: "https://www.londoncityairport.com", type: "INNER" },
+];
