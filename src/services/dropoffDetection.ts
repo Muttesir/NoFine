@@ -1,4 +1,16 @@
 import * as Location from "expo-location";
+import * as TaskManager from "expo-task-manager";
+
+const BACKGROUND_TASK = "nofine-dropoff-task";
+
+// Define background task OUTSIDE component
+if (!TaskManager.isTaskDefined(BACKGROUND_TASK)) {
+  TaskManager.defineTask(BACKGROUND_TASK, ({ data, error }: any) => {
+    if (error) { console.log("[BG] error:", error); return; }
+    const { locations } = data;
+    if (locations?.[0]) handleLocation(locations[0].coords);
+  });
+}
 import * as Notifications from "expo-notifications";
 import { Storage } from "./storage";
 import { DROPOFF_ZONES, API } from "./api";
@@ -142,16 +154,55 @@ let subscription: Location.LocationSubscription | null = null;
 export const DropoffService = {
   start: async (): Promise<boolean> => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return false;
-      if (subscription) return true;
-      subscription = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
-        (loc) => handleLocation(loc.coords)
-      );
-      console.log("[DROPOFF] Service started");
+      const { status: fg } = await Location.requestForegroundPermissionsAsync();
+      if (fg !== "granted") return false;
+
+      const { status: bg } = await Location.requestBackgroundPermissionsAsync();
+
+      if (bg === "granted") {
+        // Background mode
+        const running = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);
+        if (!running) {
+          await Location.startLocationUpdatesAsync(BACKGROUND_TASK, {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 10,
+            timeInterval: 5000,
+            showsBackgroundLocationIndicator: true,
+            pausesUpdatesAutomatically: false,
+          });
+          console.log("[DROPOFF] Background GPS started");
+        }
+      } else {
+        // Foreground fallback
+        if (!subscription) {
+          subscription = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+            (loc) => handleLocation(loc.coords)
+          );
+          console.log("[DROPOFF] Foreground GPS started");
+        }
+      }
       return true;
-    } catch (e) { console.log("[DROPOFF] start error:", e); return false; }
+    } catch (e) {
+      console.log("[DROPOFF] start error:", e);
+      // Fallback to foreground
+      try {
+        if (!subscription) {
+          subscription = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+            (loc) => handleLocation(loc.coords)
+          );
+          console.log("[DROPOFF] Fallback foreground started");
+        }
+        return true;
+      } catch (e2) { return false; }
+    }
   },
-  stop: () => { if (subscription) { subscription.remove(); subscription = null; } },
+  stop: async () => {
+    try {
+      if (subscription) { subscription.remove(); subscription = null; }
+      const running = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);
+      if (running) await Location.stopLocationUpdatesAsync(BACKGROUND_TASK);
+    } catch (e) { console.log("[DROPOFF] stop error:", e); }
+  },
 };
