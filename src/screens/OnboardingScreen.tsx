@@ -24,13 +24,13 @@ interface UlezData {
 }
 
 export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
-  const [step, setStep]       = useState(1);
-  const [name, setName]       = useState('');
-  const [plate, setPlate]     = useState('');
+  const [step,    setStep]    = useState(1);
+  const [name,    setName]    = useState('');
+  const [plate,   setPlate]   = useState('');
   const [vehicle, setVehicle] = useState<VehicleData | null>(null);
-  const [ulez, setUlez]       = useState<UlezData | null>(null);
+  const [ulez,    setUlez]    = useState<UlezData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [notUK, setNotUK]     = useState(false);
+  const [notUK,   setNotUK]   = useState(false);
 
   const verify = async () => {
     setLoading(true);
@@ -67,17 +67,21 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
     onDone();
   };
 
+  const canVerify = name.trim().length > 0 && plate.trim().length > 0;
+
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {/* Logo */}
         <View style={s.logo}>
           <Text style={s.logoText}>NoFine</Text>
-          <Text style={s.logoSub}>Airport & Charge Manager</Text>
+          <Text style={s.logoSub}>Airport &amp; Charge Manager</Text>
         </View>
 
+        {/* Step 1 */}
         {step === 1 && (
           <View style={s.card}>
-            <Text style={s.label}>YOUR NAME</Text>
+            <FieldLabel label="Your Name" />
             <TextInput
               style={s.input}
               placeholder="Your name"
@@ -86,7 +90,8 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
               onChangeText={setName}
               autoCapitalize="words"
             />
-            <Text style={[s.label, { marginTop: 16 }]}>VEHICLE PLATE</Text>
+
+            <FieldLabel label="Vehicle Plate" />
             <TextInput
               style={[s.input, s.plateInput]}
               placeholder="AB12 CDE"
@@ -96,22 +101,21 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
               autoCapitalize="characters"
               autoCorrect={false}
             />
+
             <TouchableOpacity
-              style={[s.btn, (!name.trim() || !plate.trim()) && { opacity: 0.4 }]}
+              style={[s.btn, !canVerify && { opacity: 0.4 }]}
               onPress={verify}
-              disabled={loading || !name.trim() || !plate.trim()}
+              disabled={loading || !canVerify}
             >
               {loading
                 ? <ActivityIndicator color="#000" />
                 : <Text style={s.btnText}>Verify UK Plate →</Text>}
             </TouchableOpacity>
+
             <TouchableOpacity
               style={s.skipBtn}
               onPress={() => {
-                if (!name.trim() || !plate.trim()) {
-                  Alert.alert('Please enter your name and plate first');
-                  return;
-                }
+                if (!canVerify) { Alert.alert('Please enter your name and plate first'); return; }
                 skipVerify();
               }}
             >
@@ -120,16 +124,16 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
           </View>
         )}
 
+        {/* Step 2 */}
         {step === 2 && (
           <View style={s.card}>
-            {notUK
-              ? <Text style={s.verified}>⚠️ Non-UK Vehicle</Text>
-              : <Text style={s.verified}>✓ Plate Verified</Text>}
+            <Text style={s.verified}>{notUK ? '⚠️  Non-UK Vehicle' : '✓  Plate Verified'}</Text>
 
+            {/* Plate + vehicle info */}
             <View style={s.vehicleCard}>
               <Text style={s.plateDisplay}>{plate.toUpperCase()}</Text>
               {!notUK && vehicle && (
-                <View style={s.vehicleRow}>
+                <View style={s.badgeRow}>
                   <VehicleBadge label="Make"   value={vehicle.make   || 'N/A'} />
                   <VehicleBadge label="Year"   value={vehicle.year ? String(vehicle.year) : 'N/A'} />
                   <VehicleBadge label="Colour" value={vehicle.colour || 'N/A'} />
@@ -140,6 +144,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
               )}
             </View>
 
+            {/* ULEZ status */}
             {ulez && !notUK && (
               <View style={[s.ulezCard, {
                 backgroundColor: ulez.ulezCompliant ? COLORS.greenDim : COLORS.redDim,
@@ -153,21 +158,23 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
                   <Text style={s.ulezSub}>
                     {ulez.ulezCompliant
                       ? 'Your vehicle is exempt from ULEZ charges'
-                      : `£${ulez.charge}/day charge when driving in London`}
+                      : `£${ulez.charge}/day when driving in London`}
                   </Text>
                 </View>
               </View>
             )}
 
-            <View style={s.row}>
-              <Text style={s.rowLabel}>Driver</Text>
-              <Text style={s.rowValue}>{name}</Text>
+            {/* Driver row */}
+            <View style={s.driverRow}>
+              <Text style={s.driverLabel}>Driver</Text>
+              <Text style={s.driverValue}>{name}</Text>
             </View>
 
             <TouchableOpacity style={s.btn} onPress={finish}>
               <Text style={s.btnText}>Start Driving 🚗</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.back} onPress={() => { setStep(1); setNotUK(false); }}>
+
+            <TouchableOpacity style={s.backBtn} onPress={() => { setStep(1); setNotUK(false); }}>
               <Text style={s.backText}>← Change plate</Text>
             </TouchableOpacity>
           </View>
@@ -177,46 +184,57 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   );
 }
 
+function FieldLabel({ label }: { label: string }) {
+  return <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.muted, letterSpacing: 1.5, marginBottom: 8, textTransform: 'uppercase' }}>{label}</Text>;
+}
+
 function VehicleBadge({ label, value }: { label: string; value: string }) {
   return (
-    <View style={vs.badge}>
-      <Text style={vs.label}>{label}</Text>
-      <Text style={vs.value}>{value}</Text>
+    <View style={vb.badge}>
+      <Text style={vb.label}>{label}</Text>
+      <Text style={vb.value}>{value}</Text>
     </View>
   );
 }
 
-const vs = StyleSheet.create({
+const vb = StyleSheet.create({
   badge: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 10, padding: 8, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
-  label: { fontSize: 9, color: COLORS.muted, letterSpacing: 1, marginBottom: 4 },
-  value: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  label: { fontSize: 9, color: COLORS.muted, letterSpacing: 1, marginBottom: 4, textTransform: 'uppercase', fontWeight: '600' },
+  value: { fontSize: 12, fontWeight: '700', color: COLORS.text },
 });
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  logo: { alignItems: 'center', marginBottom: 40 },
-  logoText: { fontSize: 48, fontWeight: '800', color: COLORS.green, letterSpacing: -1 },
-  logoSub: { fontSize: 13, color: COLORS.muted, marginTop: 4 },
-  card: { backgroundColor: COLORS.surface, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: COLORS.border },
-  label: { fontSize: 10, fontWeight: '700', color: COLORS.muted, letterSpacing: 1.5, marginBottom: 8 },
-  input: { backgroundColor: COLORS.surface2, borderRadius: 12, padding: 14, fontSize: 16, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border },
-  plateInput: { fontSize: 24, fontWeight: '800', color: COLORS.amber, letterSpacing: 4, textAlign: 'center', marginBottom: 4 },
-  btn: { backgroundColor: COLORS.green, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 20 },
-  btnText: { fontSize: 16, fontWeight: '800', color: '#000' },
-  skipBtn: { alignItems: 'center', marginTop: 14 },
-  skipText: { fontSize: 13, color: COLORS.blue },
-  verified: { fontSize: 18, fontWeight: '700', color: COLORS.green, marginBottom: 16 },
-  vehicleCard: { backgroundColor: COLORS.surface2, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: COLORS.border },
-  plateDisplay: { fontSize: 28, fontWeight: '800', color: COLORS.amber, letterSpacing: 4, marginBottom: 12 },
-  vehicleRow: { flexDirection: 'row', gap: 8, width: '100%' },
+  root:        { flex: 1, backgroundColor: COLORS.bg },
+  scroll:      { flexGrow: 1, justifyContent: 'center', padding: 24 },
+
+  logo:        { alignItems: 'center', marginBottom: 36 },
+  logoText:    { fontSize: 44, fontWeight: '800', color: COLORS.green, letterSpacing: -1, marginBottom: 6 },
+  logoSub:     { fontSize: 13, color: COLORS.muted },
+
+  card:        { backgroundColor: COLORS.surface, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: COLORS.border },
+  input:       { backgroundColor: COLORS.surface2, borderRadius: 12, padding: 13, fontSize: 16, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border, marginBottom: 16 },
+  plateInput:  { fontSize: 24, fontWeight: '800', color: COLORS.amber, letterSpacing: 4, textAlign: 'center', marginBottom: 4 },
+
+  btn:         { backgroundColor: COLORS.green, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 4 },
+  btnText:     { fontSize: 16, fontWeight: '800', color: '#000' },
+  skipBtn:     { alignItems: 'center', marginTop: 14 },
+  skipText:    { fontSize: 13, color: COLORS.blue },
+
+  verified:    { fontSize: 16, fontWeight: '700', color: COLORS.green, marginBottom: 16 },
+
+  vehicleCard: { backgroundColor: COLORS.surface2, borderRadius: 14, padding: 16, alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: COLORS.border },
+  plateDisplay:{ fontSize: 28, fontWeight: '800', color: COLORS.amber, letterSpacing: 4, marginBottom: 14 },
+  badgeRow:    { flexDirection: 'row', gap: 8, width: '100%' },
   vehicleNote: { fontSize: 12, color: COLORS.muted, marginTop: 8, textAlign: 'center' },
-  ulezCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1 },
-  ulezTitle: { fontSize: 14, fontWeight: '800' },
-  ulezSub: { fontSize: 12, color: COLORS.muted, marginTop: 3 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderColor: COLORS.border },
-  rowLabel: { fontSize: 13, color: COLORS.muted },
-  rowValue: { fontSize: 13, fontWeight: '600', color: COLORS.text },
-  back: { alignItems: 'center', marginTop: 12 },
-  backText: { fontSize: 13, color: COLORS.blue },
+
+  ulezCard:    { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1 },
+  ulezTitle:   { fontSize: 14, fontWeight: '800', marginBottom: 3 },
+  ulezSub:     { fontSize: 12, color: COLORS.muted, lineHeight: 18 },
+
+  driverRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderColor: COLORS.border, marginBottom: 14 },
+  driverLabel: { fontSize: 13, color: COLORS.muted },
+  driverValue: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+
+  backBtn:     { alignItems: 'center', marginTop: 12 },
+  backText:    { fontSize: 13, color: COLORS.blue },
 });
