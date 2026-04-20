@@ -1,9 +1,12 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
+
 import { Storage } from './storage';
-import { ZONES, API } from './api';
+import { DISPLAY_ZONES, DisplayZone } from './zones';
+import { API } from './api';
 import { NotificationService } from './notifications';
+import { haversineKm } from '../utils/distance';
 
 const BACKGROUND_TASK = 'nofine-background-location';
 
@@ -11,45 +14,42 @@ const insideZones = new Set<string>();
 const entryTimes: Record<string, number> = {};
 const dailyNotified = new Set<string>();
 
-function getDayKey(zoneId: string) {
+function getDayKey(zoneId: string): string {
   return zoneId + '_' + new Date().toDateString();
 }
 
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+/** Returns midnight at the end of tomorrow. */
+function midnightDeadline(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
 }
 
-export async function handleLocationUpdate(coords: { latitude: number; longitude: number }) {
+export async function handleLocationUpdate(coords: { latitude: number; longitude: number }): Promise<void> {
   const user = await Storage.getUser();
   if (!user) return;
 
-  for (const zone of ZONES) {
-    if (!zone) continue;
-    const dist = haversine(coords.latitude, coords.longitude, zone.lat, zone.lng);
+  for (const zone of DISPLAY_ZONES) {
+    const dist   = haversineKm(coords.latitude, coords.longitude, zone.lat, zone.lng);
     const inside = dist <= zone.radiusKm;
     const wasInside = insideZones.has(zone.id);
-
-    // Use smart detection for airports, simple for CCZ/ULEZ
-    const useSmartDetection = zone.chargeType === 'per_entry' || zone.chargeType === 'by_duration';
 
     if (inside && !wasInside) {
       insideZones.add(zone.id);
       entryTimes[zone.id] = Date.now();
 
-      const isDaily = zone.id.startsWith('oxford') || zone.id === 'ccz' || zone.id === 'ulez';
-      const dayKey = getDayKey(zone.id);
+      const isDaily = zone.id === 'ccz' || zone.id === 'ulez' || zone.id.startsWith('oxford');
+      const dayKey  = getDayKey(zone.id);
       if (isDaily && dailyNotified.has(dayKey)) continue;
       if (isDaily) dailyNotified.add(dayKey);
 
-      console.log(`[GPS] ENTERED: ${zone.name}`);
+      console.log(`[GPS] Entered: ${zone.name}`);
 
-      if (!useSmartDetection && zone.chargeType === 'daily') {
+      if (zone.chargeType === 'daily') {
         try {
-          const result = await API.zoneEntry(user.plate, zone.id);
+          const result = await API.zoneEntry(user.plate, zone.id) as { deadline?: string };
+          const deadline = result.deadline ?? midnightDeadline();
           const charges = await Storage.getCharges();
           charges.push({
             id: Date.now().toString(),
@@ -59,43 +59,42 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
             enteredAt: new Date().toISOString(),
             fee: zone.fee,
             penaltyFee: zone.penaltyFee,
-            deadline: result.deadline || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            deadline,
             payUrl: zone.payUrl,
             paid: false,
           });
           await Storage.saveCharges(charges);
-          const freshCharges = await Storage.getCharges();
-          const unpaidCount = freshCharges.filter((c: any) => !c.paid).length;
-          console.log("[BADGE] unpaid count:", unpaidCount);
+
+          const unpaidCount = charges.filter(c => !c.paid).length;
           await Notifications.setBadgeCountAsync(unpaidCount);
-          console.log("[NOTIF] sending zone entry notification"); 
-          await NotificationService.zoneEntry(zone.name, zone.fee, result.deadline);
-          await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, result.deadline);
+          await NotificationService.zoneEntry(zone.name, zone.fee, deadline);
+          await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, deadline);
           console.log(`[GPS] Charge created: £${zone.fee}`);
         } catch (e) {
           console.log('[GPS] entry error:', e);
         }
       } else {
-        try { await API.zoneEntry(user.plate, zone.id); } catch (e) {}
+        try { await API.zoneEntry(user.plate, zone.id); } catch { /* non-critical */ }
       }
     }
 
     if (!inside && wasInside) {
       insideZones.delete(zone.id);
-      const entryTime = entryTimes[zone.id] || Date.now();
+      const entryTime = entryTimes[zone.id] ?? Date.now();
       delete entryTimes[zone.id];
-      console.log(`[GPS] EXITED: ${zone.name}`);
+      console.log(`[GPS] Exited: ${zone.name}`);
 
       if (zone.chargeType === 'by_duration') {
-        const durationMin = (Date.now() - entryTime) / 60000;
+        const durationMin = (Date.now() - entryTime) / 60_000;
         if (durationMin < 2) {
-          console.log(`[GPS] Ignored short visit: ${durationMin.toFixed(1)}min`);
+          console.log(`[GPS] Visit too short (${durationMin.toFixed(1)}min) — ignoring`);
           continue;
         }
         try {
-          const result = await API.zoneExit(user.plate, zone.id);
-          const fee = result.fee || zone.fee;
-          const charges = await Storage.getCharges();
+          const result = await API.zoneExit(user.plate, zone.id) as { fee?: number; deadline?: string };
+          const fee      = result.fee ?? zone.fee;
+          const deadline = result.deadline ?? midnightDeadline();
+          const charges  = await Storage.getCharges();
           charges.push({
             id: Date.now().toString(),
             zoneId: zone.id,
@@ -104,13 +103,13 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
             enteredAt: new Date(entryTime).toISOString(),
             fee,
             penaltyFee: zone.penaltyFee,
-            deadline: result.deadline || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            deadline,
             payUrl: zone.payUrl,
             paid: false,
           });
           await Storage.saveCharges(charges);
-          await NotificationService.zoneEntry(zone.name, fee, result.deadline);
-          console.log(`[GPS] Exited ${zone.name} - £${fee} (${durationMin.toFixed(1)}min)`);
+          await NotificationService.zoneEntry(zone.name, fee, deadline);
+          console.log(`[GPS] Exited ${zone.name} — £${fee} (${durationMin.toFixed(1)}min)`);
         } catch (e) {
           console.log('[GPS] exit error:', e);
         }
@@ -119,13 +118,12 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
   }
 }
 
-// Background task — PRODUCTION
+// Background task definition — must not be re-defined if already registered
 if (!TaskManager.isTaskDefined(BACKGROUND_TASK)) {
-  TaskManager.defineTask(BACKGROUND_TASK, async ({ data, error }: any) => {
+  TaskManager.defineTask(BACKGROUND_TASK, async ({ data, error }: { data: { locations: Location.LocationObject[] }; error: TaskManager.TaskManagerError | null }) => {
     if (error) { console.log('[GPS] background error:', error); return; }
-    const { locations } = data;
-    if (!locations?.[0]) return;
-    await handleLocationUpdate(locations[0].coords);
+    const loc = data?.locations?.[0];
+    if (loc) await handleLocationUpdate(loc.coords);
   });
 }
 
@@ -138,26 +136,24 @@ export const LocationService = {
       if (fg !== 'granted') return false;
 
       const { status: bg } = await Location.requestBackgroundPermissionsAsync();
-      
+
       if (bg === 'granted') {
-        // Background mode
         const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);
         if (!isRunning) {
           await Location.startLocationUpdatesAsync(BACKGROUND_TASK, {
             accuracy: Location.Accuracy.High,
             distanceInterval: 10,
-            timeInterval: 5000,
+            timeInterval: 5_000,
             showsBackgroundLocationIndicator: true,
             pausesUpdatesAutomatically: false,
           });
           console.log('[GPS] Background started');
         }
       } else {
-        // Foreground only
         if (!foregroundSub) {
           foregroundSub = await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
-            (loc) => handleLocationUpdate(loc.coords)
+            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5_000 },
+            loc => handleLocationUpdate(loc.coords),
           );
           console.log('[GPS] Foreground started');
         }
@@ -165,24 +161,22 @@ export const LocationService = {
       return true;
     } catch (e) {
       console.log('[GPS] start error:', e);
-      // Fallback to foreground
       try {
         if (!foregroundSub) {
           foregroundSub = await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
-            (loc) => handleLocationUpdate(loc.coords)
+            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5_000 },
+            loc => handleLocationUpdate(loc.coords),
           );
           console.log('[GPS] Fallback foreground started');
         }
         return true;
-      } catch (e2) {
-        console.log('[GPS] fallback error:', e2);
+      } catch {
         return false;
       }
     }
   },
 
-  stop: async () => {
+  stop: async (): Promise<void> => {
     try {
       if (foregroundSub) { foregroundSub.remove(); foregroundSub = null; }
       const isRunning = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);

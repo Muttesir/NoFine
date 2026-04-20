@@ -1,51 +1,89 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, RefreshControl, Linking, Switch } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  SafeAreaView, RefreshControl, Linking, Switch, AppState, Alert,
+} from 'react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
+
 import { Storage, UserData, Charge } from '../services/storage';
-import { COLORS, ZONES } from '../services/api';
+import { COLORS } from '../services/api';
+import { DISPLAY_ZONES } from '../services/zones';
+import { haversineKm } from '../utils/distance';
 
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-const LONDON_ZONES = ZONES.filter(z => z && z.id);
-
-export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleGPS }: { user: UserData; onOpenSettings: () => void; gpsEnabled: boolean; onToggleGPS: () => void }) {
-  const [charges, setCharges] = useState<Charge[]>([]);
+export default function HomeScreen({
+  user,
+  onOpenSettings,
+  gpsEnabled,
+  onToggleGPS,
+}: {
+  user: UserData;
+  onOpenSettings: () => void;
+  gpsEnabled: boolean;
+  onToggleGPS: () => void;
+}) {
+  const [charges, setCharges]     = useState<Charge[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [coords, setCoords]       = useState<{ latitude: number; longitude: number } | null>(null);
+  const hasUnpaidRef = useRef(false);
 
   const load = useCallback(async () => {
     const c = await Storage.getCharges();
     setCharges(c);
+    hasUnpaidRef.current = c.some(ch => !ch.paid);
   }, []);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
     Location.getCurrentPositionAsync({}).then(loc => setCoords(loc.coords)).catch(() => {});
-    return () => clearInterval(t);
-  }, []);
 
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
-  const unpaid = charges.filter(c => !c.paid);
+    // Refresh when app comes back to foreground
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state === 'active') load();
+    });
 
-  const getDist = (lat: number, lng: number) => {
-    if (!coords) return null;
-    return haversine(coords.latitude, coords.longitude, lat, lng);
+    // Poll only while there are unpaid charges (avoid unnecessary work)
+    const interval = setInterval(() => {
+      if (hasUnpaidRef.current) load();
+    }, 15_000);
+
+    return () => {
+      appStateSub.remove();
+      clearInterval(interval);
+    };
+  }, [load]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
   };
 
-  const sortedLondon = [...LONDON_ZONES].sort((a, b) => {
+  const unpaid = charges.filter(c => !c.paid);
+
+  const getDist = (lat: number, lng: number): number | null => {
+    if (!coords) return null;
+    return haversineKm(coords.latitude, coords.longitude, lat, lng);
+  };
+
+  const sortedZones = [...DISPLAY_ZONES].sort((a, b) => {
     const da = getDist(a.lat, a.lng) ?? 999;
     const db = getDist(b.lat, b.lng) ?? 999;
     return da - db;
   });
 
+  // Stats
+  const totalPenaltiesAvoided = charges
+    .filter(c => c.paid)
+    .reduce((sum, c) => sum + c.penaltyFee, 0);
+
+  const now = new Date();
+  const thisMonthCount = charges.filter(c => {
+    const d = new Date(c.enteredAt);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+
+  const overdueCount = unpaid.filter(c => new Date(c.deadline).getTime() < Date.now()).length;
 
   return (
     <SafeAreaView style={s.root}>
@@ -53,6 +91,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.green} />}
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={s.header}>
           <View>
             <Text style={s.welcome}>Welcome back,</Text>
@@ -69,6 +108,7 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
         </View>
 
         <View style={s.pad}>
+          {/* Unpaid charges */}
           {unpaid.length === 0 ? (
             <View style={s.clearCard}>
               <View style={s.clearIconBox}><Text style={{ fontSize: 32 }}>✅</Text></View>
@@ -81,13 +121,14 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
             unpaid.map(c => <ChargeCard key={c.id} charge={c} onPaid={load} />)
           )}
 
+          {/* Stats row */}
           <View style={s.statsRow}>
-            <StatBox label="Penalties Avoided" value={`£${charges.filter(c => c.paid).reduce((s,c) => s+c.penaltyFee, 0).toFixed(0)}`} color={COLORS.green} />
-            <StatBox label="This Month" value={`${charges.filter(c => new Date(c.enteredAt).getMonth() === new Date().getMonth()).length}`} color={COLORS.blue} />
-            <StatBox label="Overdue" value={`${unpaid.filter(c => new Date(c.deadline).getTime() < Date.now()).length}`} color={COLORS.red} />
+            <StatBox label="Penalties Avoided" value={`£${totalPenaltiesAvoided.toFixed(0)}`} color={COLORS.green} />
+            <StatBox label="This Month"         value={`${thisMonthCount}`}                    color={COLORS.blue} />
+            <StatBox label="Overdue"            value={`${overdueCount}`}                      color={COLORS.red} />
           </View>
 
-          {/* GPS Toggle */}
+          {/* GPS toggle */}
           <View style={s.gpsRow}>
             <View>
               <Text style={s.gpsLabel}>GPS Monitoring</Text>
@@ -97,17 +138,21 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
               value={gpsEnabled}
               onValueChange={onToggleGPS}
               trackColor={{ false: COLORS.surface2, true: COLORS.green }}
-              thumbColor={'#fff'}
+              thumbColor="#fff"
             />
           </View>
 
-          {/* London Zones */}
+          {/* Zone cards */}
           <Text style={[s.sectionTitle, { marginBottom: 12 }]}>London Zones</Text>
           <View style={s.zoneGrid}>
-            {sortedLondon.map(z => {
-              const dist = getDist(z.lat, z.lng);
-              const distText = dist === null ? '...' : dist < 1 ? `${Math.round(dist * 1609)}ft` : `${(dist * 0.621371).toFixed(1)} miles`;
-              const isNear = dist !== null && dist < 5;
+            {sortedZones.map(z => {
+              const dist     = getDist(z.lat, z.lng);
+              const isNear   = dist !== null && dist < 5;
+              const distText = dist === null
+                ? '...'
+                : dist < 1
+                  ? `${Math.round(dist * 1609)}ft`
+                  : `${(dist * 0.621371).toFixed(1)} miles`;
               return (
                 <View key={z.id} style={[s.zoneCard, isNear && s.zoneCardNear]}>
                   <View style={s.zoneCardTop}>
@@ -121,18 +166,32 @@ export default function HomeScreen({ user, onOpenSettings, gpsEnabled, onToggleG
               );
             })}
           </View>
-
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─── Charge card ──────────────────────────────────────────────────────────────
+
 function ChargeCard({ charge, onPaid }: { charge: Charge; onPaid: () => void }) {
   const remaining = new Date(charge.deadline).getTime() - Date.now();
-  const hours = Math.floor(remaining / 3600000);
-  const mins = Math.floor((remaining % 3600000) / 60000);
-  const urgent = remaining < 3600000;
+  const hours     = Math.floor(remaining / 3_600_000);
+  const mins      = Math.floor((remaining % 3_600_000) / 60_000);
+  const urgent    = remaining < 3_600_000;
+
+  const markPaid = async () => {
+    const all     = await Storage.getCharges();
+    const updated = all.map((c: Charge) =>
+      c.id === charge.id ? { ...c, paid: true, paidAt: new Date().toISOString() } : c,
+    );
+    await Storage.saveCharges(updated);
+    await Storage.addToHistory({ ...charge, paid: true, paidAt: new Date().toISOString() });
+    const unpaidCount = updated.filter((c: Charge) => !c.paid).length;
+    await Notifications.setBadgeCountAsync(unpaidCount);
+    onPaid();
+  };
+
   return (
     <View style={[s.chargeCard, urgent && s.chargeUrgent]}>
       <View style={s.chargeTop}>
@@ -144,19 +203,27 @@ function ChargeCard({ charge, onPaid }: { charge: Charge; onPaid: () => void }) 
         </View>
         <Text style={[s.chargeFee, urgent && { color: COLORS.red }]}>£{charge.fee.toFixed(2)}</Text>
       </View>
-      <TouchableOpacity style={s.appleBtn}>
+
+      {/* Apple Pay — not yet integrated; shows informational alert */}
+      <TouchableOpacity
+        style={s.appleBtn}
+        onPress={() => Alert.alert('Coming Soon', 'Apple Pay integration is coming in a future update.')}
+      >
         <Text style={s.appleBtnText}>Pay with Apple Pay</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={s.paidBtn} onPress={async () => { const all = await Storage.getCharges(); const updated = all.map((c: Charge) => c.id === charge.id ? { ...c, paid: true, paidAt: new Date().toISOString() } : c); await Storage.saveCharges(updated); await Storage.addToHistory({ ...charge, paid: true, paidAt: new Date().toISOString() }); const remaining = updated.filter((c: Charge) => !c.paid).length; await Notifications.setBadgeCountAsync(remaining);
-onPaid(); }}>
+
+      <TouchableOpacity style={s.paidBtn} onPress={markPaid}>
         <Text style={s.paidBtnText}>✅ Mark as Paid</Text>
       </TouchableOpacity>
+
       <TouchableOpacity style={s.portalBtn} onPress={() => Linking.openURL(charge.payUrl)}>
         <Text style={s.portalBtnText}>Open Payment Portal →</Text>
       </TouchableOpacity>
     </View>
   );
 }
+
+// ─── Stat box ─────────────────────────────────────────────────────────────────
 
 function StatBox({ label, value, color }: { label: string; value: string; color: string }) {
   return (
@@ -166,6 +233,8 @@ function StatBox({ label, value, color }: { label: string; value: string; color:
     </View>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
