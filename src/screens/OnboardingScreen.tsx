@@ -1,24 +1,44 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert,
+} from 'react-native';
+
 import { Storage } from '../services/storage';
 import { API, COLORS, BASE_URL } from '../services/api';
 
+interface VehicleData {
+  plate: string;
+  make: string;
+  colour: string;
+  year: number | null;
+  verified: boolean;
+}
+
+interface UlezData {
+  plate: string;
+  year: number;
+  fuelType: string;
+  ulezCompliant: boolean;
+  charge: number;
+}
+
 export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
-  const [step, setStep] = useState(1);
-  const [name, setName] = useState('');
-  const [plate, setPlate] = useState('');
-  const [vehicle, setVehicle] = useState<any>(null);
-  const [ulez, setUlez] = useState<any>(null);
+  const [step, setStep]       = useState(1);
+  const [name, setName]       = useState('');
+  const [plate, setPlate]     = useState('');
+  const [vehicle, setVehicle] = useState<VehicleData | null>(null);
+  const [ulez, setUlez]       = useState<UlezData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [notUK, setNotUK] = useState(false);
+  const [notUK, setNotUK]     = useState(false);
 
   const verify = async () => {
     setLoading(true);
     try {
-      const data = await API.dvlaLookup(plate.trim());
+      const data = await API.dvlaLookup(plate.trim()) as VehicleData;
       setVehicle(data);
-      const ulezRes = await fetch(`${BASE_URL}/api/ulez-check?plate=${plate.trim()}`);
-      const ulezData = await ulezRes.json();
+      const ulezRes  = await fetch(`${BASE_URL}/api/ulez-check?plate=${encodeURIComponent(plate.trim())}`);
+      const ulezData = await ulezRes.json() as UlezData;
       setUlez(ulezData);
       setStep(2);
     } catch {
@@ -29,7 +49,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   };
 
   const skipVerify = () => {
-    setVehicle({ make: 'UNKNOWN', colour: 'UNKNOWN', year: null, verified: false });
+    setVehicle({ plate: plate.trim().toUpperCase(), make: 'UNKNOWN', colour: 'UNKNOWN', year: null, verified: false });
     setUlez(null);
     setNotUK(true);
     setStep(2);
@@ -41,7 +61,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
       plate: plate.trim().toUpperCase(),
       make: vehicle?.make,
       colour: vehicle?.colour,
-      year: vehicle?.year,
+      year: vehicle?.year ?? undefined,
       extraPlates: [],
     });
     onDone();
@@ -58,17 +78,43 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
         {step === 1 && (
           <View style={s.card}>
             <Text style={s.label}>YOUR NAME</Text>
-            <TextInput style={s.input} placeholder="Your name" placeholderTextColor={COLORS.dim} value={name} onChangeText={setName} autoCapitalize="words" />
+            <TextInput
+              style={s.input}
+              placeholder="Your name"
+              placeholderTextColor={COLORS.dim}
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+            />
             <Text style={[s.label, { marginTop: 16 }]}>VEHICLE PLATE</Text>
-            <TextInput style={[s.input, s.plateInput]} placeholder="AB12 CDE" placeholderTextColor={COLORS.dim} value={plate} onChangeText={t => setPlate(t.toUpperCase())} autoCapitalize="characters" autoCorrect={false} />
+            <TextInput
+              style={[s.input, s.plateInput]}
+              placeholder="AB12 CDE"
+              placeholderTextColor={COLORS.dim}
+              value={plate}
+              onChangeText={t => setPlate(t.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
             <TouchableOpacity
               style={[s.btn, (!name.trim() || !plate.trim()) && { opacity: 0.4 }]}
               onPress={verify}
               disabled={loading || !name.trim() || !plate.trim()}
             >
-              {loading ? <ActivityIndicator color="#000" /> : <Text style={s.btnText}>Verify UK Plate →</Text>}
+              {loading
+                ? <ActivityIndicator color="#000" />
+                : <Text style={s.btnText}>Verify UK Plate →</Text>}
             </TouchableOpacity>
-            <TouchableOpacity style={s.skipBtn} onPress={() => { if (!name.trim() || !plate.trim()) { Alert.alert('Please enter your name and plate first'); return; } skipVerify(); }}>
+            <TouchableOpacity
+              style={s.skipBtn}
+              onPress={() => {
+                if (!name.trim() || !plate.trim()) {
+                  Alert.alert('Please enter your name and plate first');
+                  return;
+                }
+                skipVerify();
+              }}
+            >
               <Text style={s.skipText}>Not a UK registered vehicle?</Text>
             </TouchableOpacity>
           </View>
@@ -76,22 +122,18 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
 
         {step === 2 && (
           <View style={s.card}>
-            {notUK ? (
-              <Text style={s.verified}>⚠️ Non-UK Vehicle</Text>
-            ) : (
-              <Text style={s.verified}>✓ Plate Verified</Text>
-            )}
+            {notUK
+              ? <Text style={s.verified}>⚠️ Non-UK Vehicle</Text>
+              : <Text style={s.verified}>✓ Plate Verified</Text>}
 
             <View style={s.vehicleCard}>
               <Text style={s.plateDisplay}>{plate.toUpperCase()}</Text>
               {!notUK && vehicle && (
-                <>
-                  <View style={s.vehicleRow}>
-                    <VehicleBadge label="Make" value={vehicle.make || 'N/A'} />
-                    <VehicleBadge label="Year" value={vehicle.year ? String(vehicle.year) : 'N/A'} />
-                    <VehicleBadge label="Colour" value={vehicle.colour || 'N/A'} />
-                  </View>
-                </>
+                <View style={s.vehicleRow}>
+                  <VehicleBadge label="Make"   value={vehicle.make   || 'N/A'} />
+                  <VehicleBadge label="Year"   value={vehicle.year ? String(vehicle.year) : 'N/A'} />
+                  <VehicleBadge label="Colour" value={vehicle.colour || 'N/A'} />
+                </View>
               )}
               {notUK && (
                 <Text style={s.vehicleNote}>ULEZ/CCZ charges may apply — check manually</Text>
@@ -99,7 +141,10 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
             </View>
 
             {ulez && !notUK && (
-              <View style={[s.ulezCard, { backgroundColor: ulez.ulezCompliant ? COLORS.greenDim : COLORS.redDim, borderColor: ulez.ulezCompliant ? COLORS.green + '44' : COLORS.red + '44' }]}>
+              <View style={[s.ulezCard, {
+                backgroundColor: ulez.ulezCompliant ? COLORS.greenDim : COLORS.redDim,
+                borderColor: ulez.ulezCompliant ? COLORS.green + '44' : COLORS.red + '44',
+              }]}>
                 <Text style={{ fontSize: 22 }}>{ulez.ulezCompliant ? '✅' : '⚠️'}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={[s.ulezTitle, { color: ulez.ulezCompliant ? COLORS.green : COLORS.red }]}>

@@ -1,92 +1,84 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+
 import { Storage } from './storage';
-import { ZONES, API } from './api';
+import { DISPLAY_ZONES } from './zones';
+import { API } from './api';
 import { NotificationService } from './notifications';
+import { haversineKm } from '../utils/distance';
 
 const TASK_NAME = 'nofine-background-location';
 
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-const insideZones = new Set<string>();
+const insideZones  = new Set<string>();
 const dailyNotified = new Set<string>();
 
 function getDayKey(zoneId: string): string {
   return zoneId + '_' + new Date().toDateString();
 }
 
-TaskManager.defineTask(TASK_NAME, async ({ data, error }: any) => {
-  if (error) return;
-  const { locations } = data;
-  const loc = locations[0];
-  if (!loc) return;
+if (!TaskManager.isTaskDefined(TASK_NAME)) {
+  TaskManager.defineTask(TASK_NAME, async ({ data, error }: { data: { locations: Location.LocationObject[] }; error: TaskManager.TaskManagerError | null }) => {
+    if (error) return;
+    const loc = data?.locations?.[0];
+    if (!loc) return;
 
-  const user = await Storage.getUser();
-  if (!user) return;
+    const user = await Storage.getUser();
+    if (!user) return;
 
-  for (const zone of ZONES) {
-    if (!zone) continue;
-    const dist = haversine(loc.coords.latitude, loc.coords.longitude, zone.lat, zone.lng);
-    const inside = dist <= zone.radiusKm;
-    const wasInside = insideZones.has(zone.id);
+    for (const zone of DISPLAY_ZONES) {
+      const dist    = haversineKm(loc.coords.latitude, loc.coords.longitude, zone.lat, zone.lng);
+      const inside  = dist <= zone.radiusKm;
+      const wasInside = insideZones.has(zone.id);
 
-    if (inside && !wasInside) {
-      const isDaily = zone.id.startsWith('oxford_ccz') || zone.id === 'ccz' || zone.id === 'ulez';
-      const dayKey = getDayKey(zone.id);
-      if (isDaily && dailyNotified.has(dayKey)) {
+      if (inside && !wasInside) {
+        const isDaily = zone.id === 'ccz' || zone.id === 'ulez' || zone.id.startsWith('oxford');
+        const dayKey  = getDayKey(zone.id);
+        if (isDaily && dailyNotified.has(dayKey)) {
+          insideZones.add(zone.id);
+          continue;
+        }
+        if (isDaily) dailyNotified.add(dayKey);
         insideZones.add(zone.id);
-        continue;
-      }
-      if (isDaily) dailyNotified.add(dayKey);
-      insideZones.add(zone.id);
-      try {
-        const result = await API.zoneEntry(user.plate, zone.id);
-        const charges = await Storage.getCharges();
-        charges.push({
-          id: Date.now().toString(),
-          zoneId: zone.id,
-          zoneName: zone.name,
-          plate: user.plate,
-          enteredAt: new Date().toISOString(),
-          fee: zone.fee,
-          penaltyFee: zone.penaltyFee,
-          deadline: result.deadline,
-          payUrl: zone.payUrl,
-          paid: false,
-        });
-        await Storage.saveCharges(charges);
-        await NotificationService.zoneEntry(zone.name, zone.fee, result.deadline);
-        await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, result.deadline);
-      } catch (e) {
-        console.log('Zone entry error:', e);
-      }
-    }
 
-    if (!inside && wasInside) {
-      insideZones.delete(zone.id);
-      try {
-        await API.zoneExit(user.plate, zone.id);
-      } catch (e) {
-        console.log('Zone exit error:', e);
+        try {
+          const result = await API.zoneEntry(user.plate, zone.id) as { deadline?: string };
+          const deadline = result.deadline ?? new Date(Date.now() + 86_400_000).toISOString();
+          const charges  = await Storage.getCharges();
+          charges.push({
+            id: Date.now().toString(),
+            zoneId: zone.id,
+            zoneName: zone.name,
+            plate: user.plate,
+            enteredAt: new Date().toISOString(),
+            fee: zone.fee,
+            penaltyFee: zone.penaltyFee,
+            deadline,
+            payUrl: zone.payUrl,
+            paid: false,
+          });
+          await Storage.saveCharges(charges);
+          await NotificationService.zoneEntry(zone.name, zone.fee, deadline);
+          await NotificationService.scheduleDeadlineReminder(zone.name, zone.fee, deadline);
+        } catch (e) {
+          console.log('[GPS] zone entry error:', e);
+        }
+      }
+
+      if (!inside && wasInside) {
+        insideZones.delete(zone.id);
+        try { await API.zoneExit(user.plate, zone.id); } catch { /* non-critical */ }
       }
     }
-  }
-});
+  });
+}
 
 export const GPS = {
-  start: async () => {
+  start: async (): Promise<boolean> => {
     try {
       const { status: fg } = await Location.requestForegroundPermissionsAsync();
       if (fg !== 'granted') return false;
-      
+
       const { status: bg } = await Location.requestBackgroundPermissionsAsync();
-      
       const isRunning = await Location.hasStartedLocationUpdatesAsync(TASK_NAME).catch(() => false);
       if (isRunning) return true;
 
@@ -107,9 +99,12 @@ export const GPS = {
       return false;
     }
   },
-  stop: async () => {
+
+  stop: async (): Promise<void> => {
     const running = await Location.hasStartedLocationUpdatesAsync(TASK_NAME).catch(() => false);
     if (running) await Location.stopLocationUpdatesAsync(TASK_NAME);
   },
-  isRunning: () => Location.hasStartedLocationUpdatesAsync(TASK_NAME).catch(() => false),
+
+  isRunning: (): Promise<boolean> =>
+    Location.hasStartedLocationUpdatesAsync(TASK_NAME).catch(() => false),
 };

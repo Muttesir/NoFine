@@ -1,34 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, SafeAreaView } from 'react-native';
 import * as Location from 'expo-location';
-import { COLORS, ZONES } from '../services/api';
+
+import { COLORS } from '../services/api';
+import { DISPLAY_ZONES } from '../services/zones';
 import { UserData } from '../services/storage';
+import { haversineKm } from '../utils/distance';
 
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-export default function TrackingScreen({ user, gpsEnabled }: { user: UserData; gpsEnabled: boolean }) {
+export default function TrackingScreen({
+  user,
+  gpsEnabled,
+}: {
+  user: UserData;
+  gpsEnabled: boolean;
+}) {
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   useEffect(() => {
-    let sub: any;
+    let sub: Location.LocationSubscription | undefined;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
-        (loc) => setCoords(loc.coords)
+        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5_000 },
+        loc => setCoords(loc.coords),
       );
     })();
     return () => { if (sub) sub.remove(); };
   }, []);
-
-  const zones = ZONES.filter(z => z && z.id);
 
   return (
     <SafeAreaView style={s.root}>
@@ -40,15 +39,15 @@ export default function TrackingScreen({ user, gpsEnabled }: { user: UserData; g
           </Text>
         </View>
       </View>
+
       <ScrollView style={s.scroll}>
-        {zones.map(zone => {
-          if (!zone) return null;
-          const dist = coords ? haversine(coords.latitude, coords.longitude, zone.lat, zone.lng) : null;
+        {DISPLAY_ZONES.map(zone => {
+          const dist      = coords ? haversineKm(coords.latitude, coords.longitude, zone.lat, zone.lng) : null;
           const distMiles = dist !== null ? (dist * 0.621371).toFixed(1) : null;
           return (
             <View key={zone.id} style={s.zoneCard}>
               <View style={s.zoneLeft}>
-                <Text style={s.zoneName}>{zone.name || zone.shortName}</Text>
+                <Text style={s.zoneName}>{zone.name}</Text>
                 <Text style={s.zoneDist}>{distMiles ? `${distMiles} miles away` : 'Locating...'}</Text>
               </View>
               <Text style={s.zoneFee}>£{zone.fee}</Text>
