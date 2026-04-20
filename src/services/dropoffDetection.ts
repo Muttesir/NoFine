@@ -215,17 +215,21 @@ async function handleLocation(coords: { latitude: number; longitude: number }): 
         console.log('[DROPOFF] Visit too short — ignoring');
         return;
       }
-      if (durationMin > 15) {
-        console.log('[DROPOFF] Likely parked — ignoring');
+      if (durationMin > 30) {
+        console.log('[DROPOFF] Likely parked (>30min) — ignoring');
         return;
       }
 
       console.log('[DROPOFF] Valid drop-off detected:', z.name);
 
+      // Duration'a göre gerçek ücreti hesapla
+      const actualFee = calculateAirportFee(z.id, z.fee, durationMin);
+      console.log('[DROPOFF] Fee:', actualFee.toFixed(2), `(${durationMin.toFixed(1)} min)`);
+
       const visit: DropoffVisit = {
         zoneId: z.id,
         zoneName: z.name,
-        fee: z.fee,
+        fee: actualFee,
         penaltyFee: z.penaltyFee,
         payUrl: z.payUrl,
         entryTime: entryT,
@@ -260,6 +264,26 @@ async function handleLocation(coords: { latitude: number; longitude: number }): 
 }
 
 // ─── Zone lookup ──────────────────────────────────────────────────────────────
+
+// Duration'a göre gerçek havalimanı ücretini hesapla
+function calculateAirportFee(zoneId: string, baseFee: number, durationMin: number): number {
+  // Heathrow — flat £7 per entry
+  if (zoneId.startsWith('heathrow')) return baseFee;
+
+  // Stansted — 0-15dk: £10, 15-30dk: £28
+  if (zoneId === 'stansted') return durationMin <= 15 ? 10 : 28;
+
+  // Luton — 0-10dk: £7, sonra +£1/dk
+  if (zoneId === 'luton') return durationMin <= 10 ? 7 : 7 + Math.ceil(durationMin - 10);
+
+  // Gatwick — 0-10dk: £10, sonra +£1/dk
+  if (zoneId.startsWith('gatwick')) return durationMin <= 10 ? 10 : 10 + Math.ceil(durationMin - 10);
+
+  // London City — 0-5dk: £8, sonra +£1/dk
+  if (zoneId === 'london_city') return durationMin <= 5 ? 8 : 8 + Math.ceil(durationMin - 5);
+
+  return baseFee;
+}
 
 function findZone(lat: number, lon: number): DetectionZone | null {
   for (const zone of DETECTION_ZONES) {

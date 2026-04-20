@@ -39,7 +39,7 @@ export async function handleLocationUpdate(coords: { latitude: number; longitude
       insideZones.add(zone.id);
       entryTimes[zone.id] = Date.now();
 
-      const isDaily = zone.id === 'ccz' || zone.id === 'ulez' || zone.id.startsWith('oxford');
+      const isDaily = zone.id === 'ccz' || zone.id === 'ulez';
       const dayKey  = getDayKey(zone.id);
       if (isDaily && dailyNotified.has(dayKey)) continue;
       if (isDaily) dailyNotified.add(dayKey);

@@ -150,9 +150,18 @@ cd ~/Desktop/NoFine
 npx expo run:ios --configuration Release --device 00008110-000A0C800252401E
 ```
 
-**App Store / TestFlight (cloud build):**
+**App Store / TestFlight (local build — EAS free plan limiti dolunca):**
 ```bash
-eas build --platform ios
+# fastlane kurulu olmalı: brew install fastlane
+eas build --local --platform ios --profile production
+# Sonra .ipa'yı submit et:
+eas submit --platform ios --path build-XXXX.ipa
+# Veya Xcode → Window → Organizer → Import Archive → Distribute App
+```
+
+**App Store / TestFlight (cloud build — EAS limiti varsa):**
+```bash
+eas build --platform ios --profile production --auto-submit
 ```
 
 **Backend deploy:**
@@ -166,5 +175,6 @@ Railway otomatik deploy eder — GitHub main'e push yeterli.
 - ULEZ detection aktif değil, sadece onboarding'de compliance check var.
 - CCZ `cczChargedDate` memory'de — app restart'ta sıfırlanır ama `nf_gps_state`'e persist ediliyor.
 - Polygon boundary'ler Google Maps'ten alındı, gerçek havalimanı testinde ince ayar gerekebilir.
-- Oxford ZEZ/CCZ backend'de tanımlı ama frontend'den kaldırıldı.
+- Gece 23:00 bildirim (`scheduleMidnightReminder`) her gün çalışıyor — trip olmasa da. İleride koşullu yapılacak.
+- Railway backend 3 günde free plan bitiyor (Nisan 2026 sonu) — Hobby $5/ay'a geçilecek veya Supabase+Vercel'e migrate.
 - `api.ts` artık zone verisi içermiyor, `zones.ts`'den re-export ediyor.

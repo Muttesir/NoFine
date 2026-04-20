@@ -31,7 +31,7 @@ if (!TaskManager.isTaskDefined(TASK_NAME)) {
       const wasInside = insideZones.has(zone.id);
 
       if (inside && !wasInside) {
-        const isDaily = zone.id === 'ccz' || zone.id === 'ulez' || zone.id.startsWith('oxford');
+        const isDaily = zone.id === 'ccz' || zone.id === 'ulez';
         const dayKey  = getDayKey(zone.id);
         if (isDaily && dailyNotified.has(dayKey)) {
           insideZones.add(zone.id);
