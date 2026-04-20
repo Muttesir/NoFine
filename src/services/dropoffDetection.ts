@@ -7,6 +7,7 @@ import { Storage, GPSState, DropoffVisit } from './storage';
 import { API } from './api';
 import { DETECTION_ZONES, CCZ_ZONE, isCCZChargeActive, DetectionZone } from './zones';
 import { haversineKm } from '../utils/distance';
+import { pointInPolygon } from '../utils/geometry';
 
 const BACKGROUND_TASK = 'nofine-dropoff-task';
 
@@ -262,7 +263,11 @@ async function handleLocation(coords: { latitude: number; longitude: number }): 
 
 function findZone(lat: number, lon: number): DetectionZone | null {
   for (const zone of DETECTION_ZONES) {
-    if (haversineKm(lat, lon, zone.lat, zone.lng) <= zone.radiusKm) return zone;
+    // Use polygon if defined (more accurate), else fall back to radius
+    const inside = zone.polygon
+      ? pointInPolygon(lat, lon, zone.polygon)
+      : haversineKm(lat, lon, zone.lat, zone.lng) <= zone.radiusKm;
+    if (inside) return zone;
   }
   return null;
 }
@@ -339,7 +344,7 @@ export const DropoffService = {
         const running = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);
         if (!running) {
           await Location.startLocationUpdatesAsync(BACKGROUND_TASK, {
-            accuracy: Location.Accuracy.High,
+            accuracy: Location.Accuracy.BestForNavigation,
             distanceInterval: 10,
             timeInterval: 5_000,
             showsBackgroundLocationIndicator: true,
@@ -351,7 +356,7 @@ export const DropoffService = {
         // Foreground-only fallback
         if (!subscription) {
           subscription = await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5_000 },
+            { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 10, timeInterval: 5_000 },
             loc => handleLocation(loc.coords),
           );
           console.log('[DROPOFF] Foreground GPS started');
@@ -364,7 +369,7 @@ export const DropoffService = {
       try {
         if (!subscription) {
           subscription = await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5_000 },
+            { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 10, timeInterval: 5_000 },
             loc => handleLocation(loc.coords),
           );
           console.log('[DROPOFF] Fallback foreground GPS started');
