@@ -51,8 +51,8 @@ const ZONES = [
   { id: 'heathrow_t3',   name: 'Heathrow Terminal 3',    shortName: 'Heathrow T3',    group: 'heathrow',    lat: 51.4738, lng: -0.4564, radiusKm: 0.25, chargeType: 'per_entry',   baseFee: 7.00,  penaltyFee: 80,  payUrl: 'https://heathrowdropoff.apcoa.com/trip/vrn',                              deadlineHours: 24, note: '£7 per entry · max 10min' },
   { id: 'heathrow_t4',   name: 'Heathrow Terminal 4',    shortName: 'Heathrow T4',    group: 'heathrow',    lat: 51.4584, lng: -0.4497, radiusKm: 0.25, chargeType: 'per_entry',   baseFee: 7.00,  penaltyFee: 80,  payUrl: 'https://heathrowdropoff.apcoa.com/trip/vrn',                              deadlineHours: 24, note: '£7 per entry · max 10min' },
   { id: 'heathrow_t5',   name: 'Heathrow Terminal 5',    shortName: 'Heathrow T5',    group: 'heathrow',    lat: 51.4723, lng: -0.4880, radiusKm: 0.25, chargeType: 'per_entry',   baseFee: 7.00,  penaltyFee: 80,  payUrl: 'https://heathrowdropoff.apcoa.com/trip/vrn',                              deadlineHours: 24, note: '£7 per entry · max 10min' },
-  { id: 'gatwick_north', name: 'Gatwick North Terminal', shortName: 'Gatwick North',  group: 'gatwick',     lat: 51.1618, lng: -0.1776, radiusKm: 0.30, chargeType: 'per_entry',   baseFee: 10.00, penaltyFee: 100, payUrl: 'https://www.gatwickairport.com/transport-options/drop-off',              deadlineHours: 24, note: '£10 per entry · max 10min' },
-  { id: 'gatwick_south', name: 'Gatwick South Terminal', shortName: 'Gatwick South',  group: 'gatwick',     lat: 51.1508, lng: -0.1774, radiusKm: 0.30, chargeType: 'per_entry',   baseFee: 10.00, penaltyFee: 100, payUrl: 'https://www.gatwickairport.com/transport-options/drop-off',              deadlineHours: 24, note: '£10 per entry · max 10min' },
+  { id: 'gatwick_north', name: 'Gatwick North Terminal', shortName: 'Gatwick North',  group: 'gatwick',     lat: 51.1618, lng: -0.1776, radiusKm: 0.30, chargeType: 'by_duration', baseFee: 10.00, baseMinutes: 10, extraPerMin: 1.00, maxMinutes: 30, penaltyFee: 100, payUrl: 'https://www.gatwickairport.com/transport-options/drop-off', deadlineHours: 24, note: '0-10min: £10 · +£1/min after' },
+  { id: 'gatwick_south', name: 'Gatwick South Terminal', shortName: 'Gatwick South',  group: 'gatwick',     lat: 51.1508, lng: -0.1774, radiusKm: 0.30, chargeType: 'by_duration', baseFee: 10.00, baseMinutes: 10, extraPerMin: 1.00, maxMinutes: 30, penaltyFee: 100, payUrl: 'https://www.gatwickairport.com/transport-options/drop-off', deadlineHours: 24, note: '0-10min: £10 · +£1/min after' },
   { id: 'stansted',      name: 'Stansted Airport',       shortName: 'Stansted',       group: 'stansted',    lat: 51.8843, lng: 0.2628,  radiusKm: 0.40, chargeType: 'by_duration', baseFee: 10.00, over15Fee: 28.00, maxMinutes: 30, penaltyFee: 100, payUrl: 'https://pay.stanstedairport.com', deadlineHours: 24, note: '0-15min: £10 · 15-30min: £28' },
   { id: 'luton',         name: 'Luton Airport',          shortName: 'Luton',          group: 'luton',       lat: 51.8748, lng: -0.3683, radiusKm: 0.30, chargeType: 'by_duration', baseFee: 7.00,  baseMinutes: 10, extraPerMin: 1.00, maxMinutes: 30, penaltyFee: 95, payUrl: 'https://www.london-luton.co.uk/to-and-from-lla/dropping-off', deadlineHours: 24, note: '0-10min: £7 · +£1/min after' },
   { id: 'london_city',   name: 'London City Airport',    shortName: 'London City',    group: 'london_city', lat: 51.5048, lng: 0.0495,  radiusKm: 0.25, chargeType: 'by_duration', baseFee: 8.00,  baseMinutes: 5,  extraPerMin: 1.00, maxMinutes: 10, penaltyFee: 80, payUrl: 'https://www.londoncityairport.com/to-and-from-the-airport/drop-off', deadlineHours: 24, note: '0-5min: £8 · +£1/min after' },
@@ -66,9 +66,10 @@ const ZONES = [
 
 function calculateFee(zone, durationMinutes) {
   if (zone.chargeType === 'per_entry' || zone.chargeType === 'daily') return zone.baseFee;
-  if (zone.id === 'stansted')    return durationMinutes <= 15 ? 10.00 : 28.00;
-  if (zone.id === 'luton')       return durationMinutes <= 10 ? 7.00 : 7.00 + Math.ceil(durationMinutes - 10);
-  if (zone.id === 'london_city') return durationMinutes <= 5  ? 8.00 : 8.00 + Math.ceil(durationMinutes - 5);
+  if (zone.id === 'stansted')                                  return durationMinutes <= 15 ? 10.00 : 28.00;
+  if (zone.id === 'luton')                                     return durationMinutes <= 10 ? 7.00  : 7.00  + Math.ceil(durationMinutes - 10);
+  if (zone.id === 'london_city')                               return durationMinutes <= 5  ? 8.00  : 8.00  + Math.ceil(durationMinutes - 5);
+  if (zone.id === 'gatwick_north' || zone.id === 'gatwick_south') return durationMinutes <= 10 ? 10.00 : 10.00 + Math.ceil(durationMinutes - 10);
   return zone.baseFee;
 }
 

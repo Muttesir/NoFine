@@ -141,8 +141,8 @@ export const DISPLAY_ZONES: DisplayZone[] = [
     radiusKm: 0.20,
     fee: 10,
     penaltyFee: 100,
-    chargeType: 'per_entry',
-    note: '£10 per entry · max 10min',
+    chargeType: 'by_duration',
+    note: '0–10min: £10 · +£1/min after',
     payUrl: 'https://www.gatwickairport.com/transport-options/drop-off/pay-drop-off-charge/',
   },
   {
@@ -155,8 +155,8 @@ export const DISPLAY_ZONES: DisplayZone[] = [
     radiusKm: 0.20,
     fee: 10,
     penaltyFee: 100,
-    chargeType: 'per_entry',
-    note: '£10 per entry · max 10min',
+    chargeType: 'by_duration',
+    note: '0–10min: £10 · +£1/min after',
     payUrl: 'https://www.gatwickairport.com/transport-options/drop-off/pay-drop-off-charge/',
   },
   {

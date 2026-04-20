@@ -35,7 +35,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
   const verify = async () => {
     setLoading(true);
     try {
-      const data = await API.dvlaLookup(plate.trim()) as VehicleData;
+      const data = await API.dvlaLookup(plate.trim()) as unknown as VehicleData;
       setVehicle(data);
       const ulezRes  = await fetch(`${BASE_URL}/api/ulez-check?plate=${encodeURIComponent(plate.trim())}`);
       const ulezData = await ulezRes.json() as UlezData;
