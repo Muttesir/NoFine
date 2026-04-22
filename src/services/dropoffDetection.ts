@@ -6,6 +6,7 @@ import * as Notifications from 'expo-notifications';
 import { Storage, GPSState, DropoffVisit } from './storage';
 import { API } from './api';
 import { DETECTION_ZONES, CCZ_ZONE, isCCZChargeActive, DetectionZone } from './zones';
+import { saveDropoffPoint, parseZoneId } from './dropoffStorage';
 import { haversineKm } from '../utils/distance';
 import { pointInPolygon } from '../utils/geometry';
 
@@ -30,6 +31,7 @@ Notifications.addNotificationResponseReceivedListener(async (response) => {
   const visit = await Storage.getPendingVisit();
   if (!visit) return;
   if (actionIdentifier === 'YES') {
+    await captureDropoffPoint(visit);
     await confirmDropoff(visit);
     await Storage.clearPendingVisit();
   } else if (actionIdentifier === 'NO') {
@@ -54,6 +56,14 @@ let cczChargedDate: string | null = null;
 
 let stateLoaded    = false;
 let dropoffCallback: ((visit: DropoffVisit) => void) | null = null;
+
+// ─── Last known GPS location (for self-learning data capture) ─────────────────
+interface Coords { latitude: number; longitude: number; timestamp: number; }
+let lastKnownLocation: Coords | null = null;
+let entryLocation: { latitude: number; longitude: number } | null = null;
+
+export function getLastKnownLocation(): Coords | null { return lastKnownLocation; }
+export function getEntryLocation(): { latitude: number; longitude: number } | null { return entryLocation; }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -161,6 +171,8 @@ async function handleCCZEntry(): Promise<void> {
 async function handleLocation(coords: { latitude: number; longitude: number }): Promise<void> {
   await loadPersistedState();
 
+  lastKnownLocation = { latitude: coords.latitude, longitude: coords.longitude, timestamp: Date.now() };
+
   const now = Date.now();
 
   // CCZ daily charge check
@@ -195,6 +207,7 @@ async function handleLocation(coords: { latitude: number; longitude: number }): 
   // Confirm entry after stability period
   if (isInsideZone && entryTime === null && entryCandidateAt && now - entryCandidateAt >= STABILITY_MS) {
     entryTime = entryCandidateAt;
+    entryLocation = lastKnownLocation ? { latitude: lastKnownLocation.latitude, longitude: lastKnownLocation.longitude } : null;
     console.log('[DROPOFF] Entry confirmed:', currentZone?.name);
     await persistState();
   }
@@ -313,6 +326,26 @@ function findZone(lat: number, lon: number): DetectionZone | null {
     if (inside) return zone;
   }
   return null;
+}
+
+// ─── Self-learning data capture ──────────────────────────────────────────────
+
+async function captureDropoffPoint(visit: DropoffVisit): Promise<void> {
+  if (!lastKnownLocation) return;
+  if (visit.durationMin < 2 || visit.durationMin > 15) return;
+
+  const [airport, terminal] = parseZoneId(visit.zoneId);
+  await saveDropoffPoint({
+    lat: lastKnownLocation.latitude,
+    lng: lastKnownLocation.longitude,
+    airport,
+    terminal,
+    duration: Math.round(visit.durationMin),
+    timestamp: new Date().toISOString(),
+    entryLat: entryLocation?.latitude,
+    entryLng: entryLocation?.longitude,
+  });
+  console.log('[LEARN] Dropoff point saved:', airport, terminal);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

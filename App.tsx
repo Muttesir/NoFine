@@ -8,7 +8,8 @@ import TrackingScreen from "./src/screens/TrackingScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import { COLORS } from "./src/services/api";
-import { DropoffService, onDropoffDetected, confirmDropoff, discardDropoff, DropoffVisit } from "./src/services/dropoffDetection";
+import { DropoffService, onDropoffDetected, confirmDropoff, discardDropoff, DropoffVisit, getLastKnownLocation } from "./src/services/dropoffDetection";
+import { saveDropoffPoint, parseZoneId } from "./src/services/dropoffStorage";
 import { NotificationService, scheduleMidnightReminder, setupNotificationCategories } from "./src/services/notifications";
 import * as Notifications from "expo-notifications";
 
@@ -119,7 +120,20 @@ export default function App() {
                 <TouchableOpacity
                   style={s.yesBtn}
                   onPress={async () => {
-                    await confirmDropoff(pendingVisit!);
+                    const visit = pendingVisit!;
+                    const lastLoc = getLastKnownLocation();
+                    if (lastLoc && visit.durationMin >= 2 && visit.durationMin <= 15) {
+                      const [airport, terminal] = parseZoneId(visit.zoneId);
+                      await saveDropoffPoint({
+                        lat: lastLoc.latitude,
+                        lng: lastLoc.longitude,
+                        airport,
+                        terminal,
+                        duration: Math.round(visit.durationMin),
+                        timestamp: new Date().toISOString(),
+                      });
+                    }
+                    await confirmDropoff(visit);
                     await Storage.clearPendingVisit();
                     setPendingVisit(null);
                     loadUser();
