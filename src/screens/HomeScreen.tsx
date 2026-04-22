@@ -171,14 +171,40 @@ function AllClear() {
   );
 }
 
+// ─── Hazard stripe ────────────────────────────────────────────────────────────
+
+function HazardStripe() {
+  return (
+    <View style={{ height: 11, overflow: 'hidden', flexDirection: 'row', backgroundColor: '#000' }}>
+      {Array.from({ length: 50 }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            width: 14,
+            height: 22,
+            backgroundColor: i % 2 === 0 ? '#FFD700' : '#111',
+            transform: [{ skewX: '-20deg' }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
 // ─── Charge card ──────────────────────────────────────────────────────────────
 
 function ChargeCard({ charge, onPaid }: { charge: Charge; onPaid: () => void }) {
   const remaining = new Date(charge.deadline).getTime() - Date.now();
-  const hours     = Math.max(0, Math.floor(remaining / 3_600_000));
-  const mins      = Math.max(0, Math.floor((remaining % 3_600_000) / 60_000));
+  const days      = Math.max(0, Math.floor(remaining / 86_400_000));
+  const hours     = Math.max(0, Math.floor((remaining % 86_400_000) / 3_600_000));
   const urgent    = remaining < 3_600_000;
   const overdue   = remaining <= 0;
+
+  const deadlineText = overdue
+    ? 'OVERDUE — PAY NOW'
+    : days > 0
+      ? `Pay within ${days} day${days > 1 ? 's' : ''} ${hours}h`
+      : `Pay within ${hours}h — deadline tonight`;
 
   const markPaid = async () => {
     const all     = await Storage.getCharges();
@@ -193,41 +219,93 @@ function ChargeCard({ charge, onPaid }: { charge: Charge; onPaid: () => void }) 
   };
 
   return (
-    <View style={[s.chargeCard, urgent && s.chargeUrgent]}>
-      {/* Top */}
-      <View style={s.chargeTop}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.chargeZone}>{charge.zoneName}</Text>
-          <View style={s.timerRow}>
-            <Text style={{ fontSize: 12, marginRight: 4 }}>{overdue ? '🚨' : '⏰'}</Text>
-            <Text style={[s.chargeTimer, urgent && { color: COLORS.red }]}>
-              {overdue ? 'Overdue — pay now!' : `${hours}h ${mins}min left`}
-            </Text>
-          </View>
-        </View>
-        <Text style={[s.chargeFee, urgent && { color: COLORS.red }]}>£{charge.fee.toFixed(2)}</Text>
+    <View style={cc.card}>
+      {/* Header */}
+      <View style={cc.header}>
+        <Text style={cc.headerLabel}>PARKING CHARGE NOTICE</Text>
+        <Text style={cc.headerVrm}>{charge.plate}</Text>
       </View>
 
-      {/* Apple Pay */}
-      <TouchableOpacity
-        style={s.appleBtn}
-        onPress={() => Alert.alert('Coming Soon', 'Apple Pay integration is coming in a future update.')}
-      >
-        <Text style={s.appleBtnText}>🍎  Pay with Apple Pay</Text>
-      </TouchableOpacity>
+      {/* Hazard stripe */}
+      <HazardStripe />
 
-      {/* Mark paid */}
-      <TouchableOpacity style={s.paidBtn} onPress={markPaid}>
-        <Text style={s.paidBtnText}>✅  Mark as Paid</Text>
-      </TouchableOpacity>
+      {/* Amount section */}
+      <View style={cc.amountSection}>
+        <Text style={cc.amountLabel}>PARKING CHARGE AMOUNT</Text>
+        <Text style={cc.amountFee}>£{charge.fee.toFixed(2)}</Text>
+        <Text style={cc.amountPenalty}>
+          Unpaid after deadline: £{charge.penaltyFee} penalty
+        </Text>
+      </View>
 
-      {/* Portal */}
-      <TouchableOpacity style={s.portalBtn} onPress={() => Linking.openURL(charge.payUrl)}>
-        <Text style={s.portalBtnText}>Open Payment Portal →</Text>
-      </TouchableOpacity>
+      {/* Hazard stripe bottom */}
+      <HazardStripe />
+
+      {/* Details */}
+      <View style={cc.details}>
+        <View style={cc.detailRow}>
+          <Text style={cc.detailKey}>LOCATION</Text>
+          <Text style={cc.detailVal}>{charge.zoneName}</Text>
+        </View>
+        {charge.enteredAt && (
+          <View style={cc.detailRow}>
+            <Text style={cc.detailKey}>ENTRY TIME</Text>
+            <Text style={cc.detailVal}>
+              {new Date(charge.enteredAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          </View>
+        )}
+        {charge.durationMinutes && (
+          <View style={cc.detailRow}>
+            <Text style={cc.detailKey}>DURATION</Text>
+            <Text style={cc.detailVal}>{charge.durationMinutes} min</Text>
+          </View>
+        )}
+        <View style={[cc.detailRow, cc.deadlineRow, urgent && { backgroundColor: '#3a0000' }]}>
+          <Text style={[cc.deadlineText, urgent && { color: COLORS.red }]}>
+            {overdue ? '🚨' : '⏰'}  {deadlineText}
+          </Text>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={cc.actions}>
+        <TouchableOpacity style={cc.portalBtn} onPress={() => Linking.openURL(charge.payUrl)}>
+          <Text style={cc.portalBtnText}>PAY NOW →</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={cc.paidBtn} onPress={markPaid}>
+          <Text style={cc.paidBtnText}>✓  Mark Paid</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
+
+const cc = StyleSheet.create({
+  card:           { borderRadius: 4, overflow: 'hidden', marginBottom: 16, borderWidth: 1.5, borderColor: '#FFD700' },
+
+  header:         { backgroundColor: '#0a1628', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
+  headerLabel:    { fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 1 },
+  headerVrm:      { fontSize: 13, fontWeight: '900', color: '#FFD700', letterSpacing: 3, backgroundColor: '#000', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 3 },
+
+  amountSection:  { backgroundColor: '#000', paddingHorizontal: 14, paddingVertical: 14, alignItems: 'center' },
+  amountLabel:    { fontSize: 10, fontWeight: '800', color: '#aaa', letterSpacing: 2, marginBottom: 4 },
+  amountFee:      { fontSize: 52, fontWeight: '900', color: '#FFD700', letterSpacing: -1 },
+  amountPenalty:  { fontSize: 11, color: '#666', marginTop: 4 },
+
+  details:        { backgroundColor: '#0d0f18', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
+  detailRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#1a1c28' },
+  detailKey:      { fontSize: 10, fontWeight: '800', color: '#555', letterSpacing: 1.5, textTransform: 'uppercase' },
+  detailVal:      { fontSize: 12, fontWeight: '700', color: '#ccc' },
+  deadlineRow:    { borderBottomWidth: 0, marginTop: 4, marginBottom: 8, backgroundColor: '#1a1200', borderRadius: 4, paddingHorizontal: 10, justifyContent: 'center' },
+  deadlineText:   { fontSize: 12, fontWeight: '700', color: '#FFD700', textAlign: 'center' },
+
+  actions:        { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: '#0d0f18' },
+  portalBtn:      { flex: 2, backgroundColor: '#0a1628', borderRadius: 6, padding: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#FFD700' },
+  portalBtnText:  { color: '#FFD700', fontWeight: '900', fontSize: 14, letterSpacing: 1 },
+  paidBtn:        { flex: 1, backgroundColor: COLORS.greenDim, borderRadius: 6, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: COLORS.green + '66' },
+  paidBtnText:    { color: COLORS.green, fontWeight: '700', fontSize: 13 },
+});
 
 // ─── Stat box ─────────────────────────────────────────────────────────────────
 
@@ -262,20 +340,6 @@ const s = StyleSheet.create({
   clearTitle: { fontSize: 20, fontWeight: '800', color: COLORS.green, marginBottom: 3 },
   clearSub:   { fontSize: 13, color: COLORS.muted },
 
-  // Charge card
-  chargeCard:  { backgroundColor: '#1c0e00', borderRadius: 20, padding: 20, marginBottom: 14, borderWidth: 1.5, borderColor: COLORS.amber + '55' },
-  chargeUrgent:{ backgroundColor: COLORS.redDim, borderColor: COLORS.red + '55' },
-  chargeTop:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 },
-  chargeZone:  { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: 6 },
-  timerRow:    { flexDirection: 'row', alignItems: 'center' },
-  chargeTimer: { fontSize: 13, color: COLORS.amber, fontWeight: '600' },
-  chargeFee:   { fontSize: 38, fontWeight: '900', color: COLORS.amber, letterSpacing: -1 },
-  appleBtn:    { backgroundColor: '#000', borderRadius: 14, padding: 15, alignItems: 'center', borderWidth: 1, borderColor: '#333', marginBottom: 8 },
-  appleBtnText:{ color: '#fff', fontWeight: '700', fontSize: 15 },
-  paidBtn:     { backgroundColor: COLORS.greenDim, borderRadius: 13, padding: 14, alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: COLORS.green + '44' },
-  paidBtnText: { color: COLORS.green, fontWeight: '800', fontSize: 15 },
-  portalBtn:   { padding: 10, alignItems: 'center' },
-  portalBtnText:{ color: COLORS.blue, fontWeight: '600', fontSize: 14 },
 
   // Stats
   statsRow:   { flexDirection: 'row', gap: 8, marginBottom: 16 },
