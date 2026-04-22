@@ -38,10 +38,9 @@ NoFine/
 │   └── services/
 │       ├── zones.ts                 # TEK KAYNAK — tüm zone verileri burada
 │       ├── api.ts                   # BASE_URL, COLORS, API calls, zone re-export
-│       ├── dropoffDetection.ts      # GPS core — havalimanı + CCZ algılama
+│       ├── dropoffDetection.ts      # GPS core — havalimanı + CCZ algılama + bildirim aksiyonları
 │       ├── storage.ts               # AsyncStorage wrapper
-│       ├── notifications.ts         # Push notification helpers
-│       └── locationService.ts       # Eski GPS sistemi (kullanılmıyor, silme)
+│       └── notifications.ts         # Push notification helpers + kategori kurulumu
 ├── backend/
 │   └── src/index.js                 # Express API — zone data, DVLA, fee calc
 └── CLAUDE.md                        # Bu dosya
@@ -58,7 +57,7 @@ NoFine/
 ```
 Zone'a gir → 30sn bekle → entry confirmed
 Zone'dan çık → 30sn bekle → süre hesapla
-2–30 dk arası → drop-off detected → notification + popup
+2–30 dk arası → drop-off detected → notification (Yes/No butonlu) + popup
 < 2dk → ignore (sadece geçti)
 > 30dk → ignore (park etti)
 ```
@@ -75,12 +74,28 @@ App kill edilse bile GPS state kaybolmaz:
 - Entry/exit bilgileri AsyncStorage'a kaydedilir (`nf_gps_state`)
 - Background task yeniden başlayınca state restore edilir
 
-### Background Notification Akışı
+### Background Notification Akışı (güncel)
 ```
-Drop-off algılandı → savePendingVisit() → notification gönder
-Kullanıcı notification'a tıklar → app açılır → checkPendingVisit() → popup
-Kullanıcı Yes basar → confirmDropoff() → clearPendingVisit()
+Drop-off algılandı → savePendingVisit() → notification gönder (Yes/No butonlarıyla)
+
+Kullanıcı "Yes" butonuna basar → app AÇILMAZ → arka planda confirmDropoff()
+Kullanıcı "No" butonuna basar  → app AÇILMAZ → arka planda discardDropoff()
+Kullanıcı bildirim gövdesine tıklar → app açılır → checkPendingVisit() → popup
 ```
+
+Bildirim aksiyonları `dropoffDetection.ts`'de modül seviyesinde kayıtlı
+(`Notifications.addNotificationResponseReceivedListener`) — app kill olsa bile arka planda çalışır.
+
+---
+
+## Bildirim Kategorisi
+
+`notifications.ts`'de `setupNotificationCategories()` ile kayıtlı:
+- Kategori ID: `dropoff_confirm`
+- Aksiyon `YES` → `opensAppToForeground: false`
+- Aksiyon `NO`  → `opensAppToForeground: false`, `isDestructive: true`
+
+`App.tsx` startup'ta `setupNotificationCategories()` çağırır.
 
 ---
 
@@ -110,6 +125,18 @@ luton       → ≤10dk: £7 · sonrası +£1/dk
 gatwick     → ≤10dk: £10 · sonrası +£1/dk
 london_city → ≤5dk: £8 · sonrası +£1/dk
 ```
+
+---
+
+## UI — Charge Kartı Tasarımı
+
+Gerçek APCOA ceza kağıdından ilham alınarak tasarlandı:
+- Lacivert (`#0a1628`) header — "PARKING CHARGE NOTICE" + sarı plaka
+- Sarı/siyah hazard şerit (skewX diagonal)
+- Siyah zemin üzerine büyük sarı ücret (`£X.XX`)
+- Tablo detaylar: location, entry time, duration
+- Deadline countdown (urgency rengi)
+- "PAY NOW →" + "✓ Mark Paid" butonları
 
 ---
 
@@ -150,16 +177,13 @@ cd ~/Desktop/NoFine
 npx expo run:ios --configuration Release --device 00008110-000A0C800252401E
 ```
 
-**App Store / TestFlight (local build — EAS free plan limiti dolunca):**
-```bash
-# fastlane kurulu olmalı: brew install fastlane
-eas build --local --platform ios --profile production
-# Sonra .ipa'yı submit et:
-eas submit --platform ios --path build-XXXX.ipa
-# Veya Xcode → Window → Organizer → Import Archive → Distribute App
+**App Store / TestFlight (Xcode ile):**
+```
+Xcode → Any iOS Device (arm64) → Product → Archive
+→ Distribute App → App Store Connect → Upload
 ```
 
-**App Store / TestFlight (cloud build — EAS limiti varsa):**
+**App Store / TestFlight (cloud build):**
 ```bash
 eas build --platform ios --profile production --auto-submit
 ```
@@ -171,10 +195,10 @@ Railway otomatik deploy eder — GitHub main'e push yeterli.
 
 ## Önemli Notlar
 
-- `locationService.ts` → eski sistem, kullanılmıyor. Silme — import eden yer olabilir.
 - ULEZ detection aktif değil, sadece onboarding'de compliance check var.
 - CCZ `cczChargedDate` memory'de — app restart'ta sıfırlanır ama `nf_gps_state`'e persist ediliyor.
 - Polygon boundary'ler Google Maps'ten alındı, gerçek havalimanı testinde ince ayar gerekebilir.
 - Gece 23:00 bildirim (`scheduleMidnightReminder`) her gün çalışıyor — trip olmasa da. İleride koşullu yapılacak.
-- Railway backend 3 günde free plan bitiyor (Nisan 2026 sonu) — Hobby $5/ay'a geçilecek veya Supabase+Vercel'e migrate.
-- `api.ts` artık zone verisi içermiyor, `zones.ts`'den re-export ediyor.
+- Railway backend Nisan 2026 sonu free plan bitiyor — Hobby $5/ay'a geçilecek veya Supabase+Vercel'e migrate.
+- `api.ts` zone verisi içermiyor, `zones.ts`'den re-export ediyor.
+- `locationService.ts`, `gps.ts`, `gpsState.ts` silindi — eski GPS sistemi, `dropoffDetection.ts` kullanılıyor.
