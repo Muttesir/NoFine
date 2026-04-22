@@ -20,6 +20,24 @@ if (!TaskManager.isTaskDefined(BACKGROUND_TASK)) {
   });
 }
 
+// Handle Yes/No notification actions in background (opensApp: false)
+// Registered at module level so it fires even when app is woken in background
+Notifications.addNotificationResponseReceivedListener(async (response) => {
+  const { actionIdentifier, notification } = response;
+  const data = notification.request.content.data as any;
+  if (actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+  if (data?.type !== 'dropoff_pending') return;
+  const visit = await Storage.getPendingVisit();
+  if (!visit) return;
+  if (actionIdentifier === 'YES') {
+    await confirmDropoff(visit);
+    await Storage.clearPendingVisit();
+  } else if (actionIdentifier === 'NO') {
+    discardDropoff();
+    await Storage.clearPendingVisit();
+  }
+});
+
 const TEST_MODE = false;
 const STABILITY_MS = TEST_MODE ? 1_000 : 30_000;
 const COOLDOWN_MS  = TEST_MODE ? 5_000 : 600_000;
@@ -241,10 +259,11 @@ async function handleLocation(coords: { latitude: number; longitude: number }): 
       await Storage.savePendingVisit(visit);
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: 'Airport drop-off detected',
-          body: `You stayed ${Math.round(durationMin)} min at ${z.name}. Tap to confirm.`,
+          title: `✈️ Drop-off at ${z.name}`,
+          body: `${Math.round(durationMin)} min · £${actualFee.toFixed(2)} — Did you drop off passengers?`,
           sound: true,
           data: { type: 'dropoff_pending' },
+          categoryIdentifier: 'dropoff_confirm',
         },
         trigger: { type: 'timeInterval', seconds: 1, repeats: false } as unknown as null,
       });
@@ -415,6 +434,7 @@ export const DropoffService = {
     }
   },
 };
+
 
 // Re-export DropoffVisit so App.tsx can import it from one place
 export type { DropoffVisit };

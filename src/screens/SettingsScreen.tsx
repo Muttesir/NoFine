@@ -155,4 +155,5 @@ const s = StyleSheet.create({
   vehicleRow: { flexDirection: 'row', gap: 8 },
   resetText:  { color: COLORS.red, fontWeight: '600', fontSize: 14 },
   version:    { textAlign: 'center', color: COLORS.dim, fontSize: 12, marginVertical: 24 },
+
 });

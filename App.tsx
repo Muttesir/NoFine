@@ -9,7 +9,7 @@ import HistoryScreen from "./src/screens/HistoryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import { COLORS } from "./src/services/api";
 import { DropoffService, onDropoffDetected, confirmDropoff, discardDropoff, DropoffVisit } from "./src/services/dropoffDetection";
-import { NotificationService, scheduleMidnightReminder } from "./src/services/notifications";
+import { NotificationService, scheduleMidnightReminder, setupNotificationCategories } from "./src/services/notifications";
 import * as Notifications from "expo-notifications";
 
 type Tab = "home" | "tracking" | "history";
@@ -35,6 +35,7 @@ export default function App() {
       if (u && !started.current) {
         started.current = true;
         await NotificationService.requestPermission();
+        await setupNotificationCategories();
         scheduleMidnightReminder();
         onDropoffDetected((visit) => setPendingVisit(visit));
         await DropoffService.start();
@@ -51,6 +52,8 @@ export default function App() {
     loadUser();
 
     const notifSub = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      // YES/NO actions handled in background by dropoffDetection.ts
+      if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
       const data = response.notification.request.content.data as any;
       if (data?.type === "dropoff_pending") await checkPendingVisit();
     });
