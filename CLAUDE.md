@@ -53,14 +53,26 @@ NoFine/
 ### Tek sistem: `dropoffDetection.ts`
 `App.tsx`'de `DropoffService.start()` ile başlatılır. İki şeyi paralel yapar:
 
-**1. Havalimanı Drop-off Algılama**
+**1. Havalimanı Drop-off Algılama — 3-Nokta Sıralı Sistem (entry → mid → exit)**
+
+Eski polygon tabanlı sistem kaldırıldı. Her terminal için 3 GPS noktası tanımlı:
+- **entry** — terminal giriş rampası başı (ilk geçiş noktası)
+- **mid** — bırakma alanı (araç burada durur)
+- **exit** — terminal çıkış rampası (son geçiş noktası)
+
+Algılama akışı:
 ```
-Zone'a gir → 30sn bekle → entry confirmed
-Zone'dan çık → 30sn bekle → süre hesapla
-2–30 dk arası → drop-off detected → notification (Yes/No butonlu) + popup
-< 2dk → ignore (sadece geçti)
-> 30dk → ignore (park etti)
+entry noktasına gir → passedEntry = true
+mid noktasına gir (passedEntry=true) → midEntryTime kaydet
+  speed > 8.33 m/s (30 km/h) → geçiyor, skip
+mid'den çık → süre hesapla:
+  2–30 dk → drop-off detected → triggerDropoff()
+  < 2dk   → ignore (çok kısa)
+  > 30dk  → ignore (park etti)
+exit noktasına gir (passedMid=true) → alternatif trigger (süre uygunsa)
 ```
+
+Her terminal için ayrı `TerminalState` — state'ler in-memory (app restart'ta sıfırlanır, kabul edilebilir).
 
 **2. CCZ Günlük Ücret**
 ```
@@ -70,9 +82,9 @@ Evet → ignore
 ```
 
 ### State Persistence
-App kill edilse bile GPS state kaybolmaz:
-- Entry/exit bilgileri AsyncStorage'a kaydedilir (`nf_gps_state`)
-- Background task yeniden başlayınca state restore edilir
+- **Terminal states** (entry/mid geçiş bilgileri) → in-memory only, restart'ta sıfırlanır
+- **CCZ + cooldown** → AsyncStorage'a kaydedilir (`nf_gps_state`) — restart-safe
+- `nf_gps_state` sadece 3 alan içerir: `{ cooldownUntil, cczIsInside, cczChargedDate }`
 
 ### Background Notification Akışı (güncel)
 ```
@@ -103,19 +115,45 @@ Bildirim aksiyonları `dropoffDetection.ts`'de modül seviyesinde kayıtlı
 
 ### `zones.ts` — Tek kaynak (buradan düzenle)
 - `DISPLAY_ZONES` → UI'da gösterilen zone listesi (HomeScreen, TrackingScreen)
-- `DETECTION_ZONES` → GPS algılama için terminal bazlı hassas sınırlar (polygon + radius)
+- `TERMINAL_ZONES` → GPS algılama için terminal bazlı 3-nokta sınırlar (`TerminalZone[]`)
 - `CCZ_ZONE` → CCZ config (dropoffDetection.ts kullanır)
 
+### Interface'ler
+
+```typescript
+interface GeoPoint {
+  lat: number;
+  lng: number;
+  radiusM: number;   // metre cinsinden algılama yarıçapı
+}
+
+interface TerminalZone {
+  id: string;
+  name: string;
+  level: 'Upper' | 'Ground';   // viyadük vs zemin kattı
+  fee: number;                 // base ücret (£)
+  penaltyFee: number;          // ödenmezse ceza (£)
+  payUrl: string;              // APCOA veya havalimanı ödeme linki
+  entry: GeoPoint;
+  mid:   GeoPoint;
+  exit:  GeoPoint;
+}
+```
+
 ### Aktif Havalimanları
-| ID | İsim | Ücret |
-|---|---|---|
-| heathrow_t2/t3/t4/t5 | Heathrow Terminals | £7 flat per entry |
-| gatwick_north/south | Gatwick North/South | 0–10dk: £10, +£1/dk |
-| stansted | Stansted | 0–15dk: £10, 15–30dk: £28 |
-| luton | Luton | 0–10dk: £7, +£1/dk |
-| london_city | London City | 0–5dk: £8, +£1/dk |
-| ccz | Congestion Charge Zone | £15/gün (Pzt–Cum 07–18, Cmt 12–18) |
-| ulez | ULEZ | Onboarding'de DVLA ile kontrol, aktif detection yok |
+| ID | İsim | Level | Ücret |
+|---|---|---|---|
+| heathrow_t2 | Heathrow T2 | Upper | £7 flat |
+| heathrow_t3 | Heathrow T3 | Upper | £7 flat |
+| heathrow_t4 | Heathrow T4 | Ground | £7 flat |
+| heathrow_t5 | Heathrow T5 | Upper | £7 flat |
+| gatwick_north | Gatwick North | Upper | 0–10dk: £10, +£1/dk |
+| gatwick_south | Gatwick South | Upper | 0–10dk: £10, +£1/dk |
+| stansted | Stansted | Ground | 0–15dk: £10, 15–30dk: £28 |
+| luton | Luton | Ground | 0–10dk: £7, +£1/dk |
+| london_city | London City | Ground | 0–5dk: £8, +£1/dk |
+| ccz | Congestion Charge Zone | — | £15/gün (Pzt–Cum 07–18, Cmt 12–18) |
+| ulez | ULEZ | — | Onboarding'de DVLA ile kontrol, aktif detection yok |
 
 ### Fee Hesaplama (`calculateAirportFee` in dropoffDetection.ts)
 ```
@@ -125,6 +163,12 @@ luton       → ≤10dk: £7 · sonrası +£1/dk
 gatwick     → ≤10dk: £10 · sonrası +£1/dk
 london_city → ≤5dk: £8 · sonrası +£1/dk
 ```
+
+### Koordinat Notları (WGS84 decimal degrees)
+- Tüm koordinatlar Google Maps / açık havalimanı haritalarından alındı
+- `level: 'Upper'` terminaller viyadük (~7m yükseklik) üzerinde — GPS bazen alt kattaki park ile karışabilir
+- Gerçek test sonrası `radiusM` değerleri ince ayar gerektirebilir
+- London City koordinatları Hartmann Road bırakma alanına göre: entry `(51.5048, 0.0512)` → exit `(51.5056, 0.0542)`
 
 ---
 
@@ -165,7 +209,7 @@ POST /api/register-token        → { plate, token } → push token kayıt
 | `nf_charges` | Ödenmemiş charge listesi |
 | `nf_history` | Ödenen charge geçmişi (max 100) |
 | `nf_pending_visit` | Onay bekleyen drop-off (popup için) |
-| `nf_gps_state` | GPS tracking state (kill-safe persistence) |
+| `nf_gps_state` | `{ cooldownUntil, cczIsInside, cczChargedDate }` — sadece 3 alan |
 
 ---
 
@@ -195,10 +239,12 @@ Railway otomatik deploy eder — GitHub main'e push yeterli.
 
 ## Önemli Notlar
 
+- **GPS sistemi 3-nokta modeline geçildi** (Nisan 2026) — eski polygon/`DETECTION_ZONES` sistemi tamamen kaldırıldı.
+- `api.ts` zone verisi içermiyor, `zones.ts`'den re-export ediyor (`TERMINAL_ZONES`, `TerminalZone`).
+- `locationService.ts`, `gps.ts`, `gpsState.ts` silindi — eski GPS sistemi, `dropoffDetection.ts` kullanılıyor.
 - ULEZ detection aktif değil, sadece onboarding'de compliance check var.
-- CCZ `cczChargedDate` memory'de — app restart'ta sıfırlanır ama `nf_gps_state`'e persist ediliyor.
-- Polygon boundary'ler Google Maps'ten alındı, gerçek havalimanı testinde ince ayar gerekebilir.
+- CCZ `cczChargedDate` `nf_gps_state`'e persist ediliyor — app restart'ta kaybolmaz.
+- Terminal state'leri (entry/mid geçişleri) in-memory — app restart'ta sıfırlanır, bu kasıtlı bir tercih.
 - Gece 23:00 bildirim (`scheduleMidnightReminder`) her gün çalışıyor — trip olmasa da. İleride koşullu yapılacak.
 - Railway backend Nisan 2026 sonu free plan bitiyor — Hobby $5/ay'a geçilecek veya Supabase+Vercel'e migrate.
-- `api.ts` zone verisi içermiyor, `zones.ts`'den re-export ediyor.
-- `locationService.ts`, `gps.ts`, `gpsState.ts` silindi — eski GPS sistemi, `dropoffDetection.ts` kullanılıyor.
+- Speed filtresi: mid noktasında `speed > 8.33 m/s` (30 km/h) → drop-off sayılmaz, araç geçiyordur.
