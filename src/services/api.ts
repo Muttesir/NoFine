@@ -1,4 +1,4 @@
-import { DISPLAY_ZONES, DETECTION_ZONES, DisplayZone, DetectionZone } from './zones';
+import { DISPLAY_ZONES, TERMINAL_ZONES, DisplayZone, TerminalZone } from './zones';
 
 export const BASE_URL = 'https://nofine-production.up.railway.app';
 
@@ -10,10 +10,10 @@ export const COLORS = {
   red: '#FF3B55', redDim: '#2a0000', blue: '#3B82F6',
 };
 
-// Re-export zone lists so existing imports don't need to change
+// Re-export zone lists
 export const ZONES: DisplayZone[] = DISPLAY_ZONES;
-export const DROPOFF_ZONES: DetectionZone[] = DETECTION_ZONES;
-export type { DisplayZone, DetectionZone };
+export const DROPOFF_ZONES: TerminalZone[] = TERMINAL_ZONES;
+export type { DisplayZone, TerminalZone };
 
 export const API = {
   dvlaLookup: async (plate: string): Promise<Record<string, unknown>> => {

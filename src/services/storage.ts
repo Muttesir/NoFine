@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DetectionZone } from './zones';
 
 export interface UserData {
   name: string;
@@ -40,11 +39,6 @@ export interface DropoffVisit {
 }
 
 export interface GPSState {
-  isInsideZone: boolean;
-  currentZone: DetectionZone | null;
-  entryTime: number | null;
-  entryCandidateAt: number | null;
-  exitCandidateAt: number | null;
   cooldownUntil: number;
   cczIsInside: boolean;
   cczChargedDate: string | null;

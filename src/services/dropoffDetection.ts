@@ -5,24 +5,28 @@ import * as Notifications from 'expo-notifications';
 
 import { Storage, GPSState, DropoffVisit } from './storage';
 import { API } from './api';
-import { DETECTION_ZONES, CCZ_ZONE, isCCZChargeActive, DetectionZone } from './zones';
+import { TERMINAL_ZONES, TerminalZone, CCZ_ZONE, isCCZChargeActive } from './zones';
 import { saveDropoffPoint, parseZoneId } from './dropoffStorage';
 import { haversineKm } from '../utils/distance';
-import { pointInPolygon } from '../utils/geometry';
 
 const BACKGROUND_TASK = 'nofine-dropoff-task';
 
-// Background task must be defined at module load, before any async work
+// Background task — must be defined at module load before any async work
 if (!TaskManager.isTaskDefined(BACKGROUND_TASK)) {
-  TaskManager.defineTask(BACKGROUND_TASK, async ({ data, error }: { data: { locations: Location.LocationObject[] }; error: TaskManager.TaskManagerError | null }) => {
+  TaskManager.defineTask(BACKGROUND_TASK, async ({
+    data, error,
+  }: {
+    data: { locations: Location.LocationObject[] };
+    error: TaskManager.TaskManagerError | null;
+  }) => {
     if (error) { console.log('[BG] error:', error); return; }
     const loc = data?.locations?.[0];
     if (loc) await handleLocation(loc.coords);
   });
 }
 
-// Handle Yes/No notification actions in background (opensApp: false)
-// Registered at module level so it fires even when app is woken in background
+// Yes/No notification actions — registered at module level so they fire
+// even when the app is woken in background (opensApp: false)
 Notifications.addNotificationResponseReceivedListener(async (response) => {
   const { actionIdentifier, notification } = response;
   const data = notification.request.content.data as any;
@@ -40,44 +44,85 @@ Notifications.addNotificationResponseReceivedListener(async (response) => {
   }
 });
 
-const TEST_MODE = false;
-const STABILITY_MS = TEST_MODE ? 1_000 : 30_000;
-const COOLDOWN_MS  = TEST_MODE ? 5_000 : 600_000;
+// ─── Constants ────────────────────────────────────────────────────────────────
+const TEST_MODE   = false;
+const COOLDOWN_MS = TEST_MODE ? 5_000 : 600_000; // 10 min cooldown after a drop-off
 
-// ─── Module-level state (persisted to AsyncStorage) ───────────────────────────
-let isInsideZone   = false;
-let currentZone: DetectionZone | null = null;
-let entryTime: number | null = null;
-let entryCandidateAt: number | null = null;
-let exitCandidateAt: number | null = null;
+// Speed threshold: if GPS speed > 30 km/h (8.33 m/s) at the mid point,
+// the driver is just passing through — skip detection.
+const MAX_SPEED_MS = 8.33;
+
+// ─── Per-terminal detection state (in-memory, resets on app restart) ──────────
+//
+// Flow:  entry zone ──► mid zone (stop 2–30 min) ──► exit zone  =  drop-off
+//
+// "passedEntry" must be true before mid is tracked.
+// Trigger fires when passedMid becomes true with valid duration.
+// Exit zone is an additional confirmation (not strictly required).
+//
+interface TerminalState {
+  passedEntry: boolean;
+  inMid: boolean;
+  midEntryTime: number | null;
+  passedMid: boolean;
+  triggered: boolean;
+}
+
+const termStates = new Map<string, TerminalState>();
+
+function getState(id: string): TerminalState {
+  if (!termStates.has(id)) {
+    termStates.set(id, {
+      passedEntry: false,
+      inMid: false,
+      midEntryTime: null,
+      passedMid: false,
+      triggered: false,
+    });
+  }
+  return termStates.get(id)!;
+}
+
+function resetState(id: string): void {
+  termStates.set(id, {
+    passedEntry: false,
+    inMid: false,
+    midEntryTime: null,
+    passedMid: false,
+    triggered: false,
+  });
+}
+
+// ─── Module-level state (persisted) ──────────────────────────────────────────
 let cooldownUntil  = 0;
 let cczIsInside    = false;
 let cczChargedDate: string | null = null;
-
 let stateLoaded    = false;
+
 let dropoffCallback: ((visit: DropoffVisit) => void) | null = null;
 
-// ─── Last known GPS location (for self-learning data capture) ─────────────────
+// Last known location (for self-learning data capture)
 interface Coords { latitude: number; longitude: number; timestamp: number; }
 let lastKnownLocation: Coords | null = null;
-let entryLocation: { latitude: number; longitude: number } | null = null;
 
 export function getLastKnownLocation(): Coords | null { return lastKnownLocation; }
-export function getEntryLocation(): { latitude: number; longitude: number } | null { return entryLocation; }
 
-// ─── Date helpers ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Returns a string key for today, used to guard duplicate daily charges. */
 function todayKey(): string {
   return new Date().toDateString();
 }
 
-/** Returns midnight at the end of tomorrow (gives ~24–48h to pay). */
 function midnightDeadline(): Date {
   const d = new Date();
   d.setDate(d.getDate() + 1);
   d.setHours(23, 59, 59, 999);
   return d;
+}
+
+/** Returns distance in metres between two coordinates. */
+function distM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  return haversineKm(lat1, lng1, lat2, lng2) * 1000;
 }
 
 // ─── State persistence ────────────────────────────────────────────────────────
@@ -88,31 +133,33 @@ async function loadPersistedState(): Promise<void> {
   try {
     const s = await Storage.getGPSState();
     if (!s) return;
-    isInsideZone     = s.isInsideZone     ?? false;
-    currentZone      = s.currentZone      ?? null;
-    entryTime        = s.entryTime        ?? null;
-    entryCandidateAt = s.entryCandidateAt ?? null;
-    exitCandidateAt  = s.exitCandidateAt  ?? null;
-    cooldownUntil    = s.cooldownUntil    ?? 0;
-    cczIsInside      = s.cczIsInside      ?? false;
-    cczChargedDate   = s.cczChargedDate   ?? null;
-    console.log('[STATE] Restored:', isInsideZone ? `inside ${currentZone?.name}` : 'outside');
+    cooldownUntil  = s.cooldownUntil  ?? 0;
+    cczIsInside    = s.cczIsInside    ?? false;
+    cczChargedDate = s.cczChargedDate ?? null;
+    console.log('[STATE] Restored. Cooldown until:', new Date(cooldownUntil).toLocaleTimeString());
   } catch (e) {
     console.log('[STATE] restore error:', e);
   }
 }
 
 async function persistState(): Promise<void> {
-  const snapshot: GPSState = {
-    isInsideZone, currentZone, entryTime,
-    entryCandidateAt, exitCandidateAt, cooldownUntil,
-    cczIsInside, cczChargedDate,
-  };
+  const snapshot: GPSState = { cooldownUntil, cczIsInside, cczChargedDate };
   try {
     await Storage.saveGPSState(snapshot);
   } catch (e) {
     console.log('[STATE] persist error:', e);
   }
+}
+
+// ─── Fee calculation ──────────────────────────────────────────────────────────
+
+function calculateAirportFee(zoneId: string, baseFee: number, durationMin: number): number {
+  if (zoneId.startsWith('heathrow'))  return baseFee;                                           // £7 flat
+  if (zoneId === 'stansted')          return durationMin <= 15 ? 10 : 28;                       // £10 or £28
+  if (zoneId === 'luton')             return durationMin <= 10 ? 7 : 7 + Math.ceil(durationMin - 10);
+  if (zoneId.startsWith('gatwick'))   return durationMin <= 10 ? 10 : 10 + Math.ceil(durationMin - 10);
+  if (zoneId === 'london_city')       return durationMin <= 5  ? 8 : 8 + Math.ceil(durationMin - 5);
+  return baseFee;
 }
 
 // ─── CCZ daily charge ─────────────────────────────────────────────────────────
@@ -128,7 +175,7 @@ async function handleCCZEntry(): Promise<void> {
       return;
     }
     cczChargedDate = todayKey();
-    await persistState(); // Persist immediately to prevent duplicates on restart
+    await persistState();
 
     const user = await Storage.getUser();
     if (!user) return;
@@ -148,8 +195,7 @@ async function handleCCZEntry(): Promise<void> {
     });
     await Storage.saveCharges(charges);
 
-    const unpaid = charges.filter(c => !c.paid).length;
-    await Notifications.setBadgeCountAsync(unpaid);
+    await Notifications.setBadgeCountAsync(charges.filter(c => !c.paid).length);
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '🚧 Congestion Charge Zone',
@@ -166,174 +212,153 @@ async function handleCCZEntry(): Promise<void> {
   }
 }
 
+// ─── Drop-off trigger ─────────────────────────────────────────────────────────
+
+async function triggerDropoff(zone: TerminalZone, midEntryTime: number, midExitTime: number): Promise<void> {
+  const durationMin = (midExitTime - midEntryTime) / 60_000;
+  const actualFee   = calculateAirportFee(zone.id, zone.fee, durationMin);
+
+  console.log(`[DROPOFF] ✅ ${zone.name} · ${durationMin.toFixed(1)} min · £${actualFee.toFixed(2)}`);
+
+  const visit: DropoffVisit = {
+    zoneId: zone.id,
+    zoneName: zone.name,
+    fee: actualFee,
+    penaltyFee: zone.penaltyFee,
+    payUrl: zone.payUrl,
+    entryTime: midEntryTime,
+    exitTime: midExitTime,
+    durationMin,
+  };
+
+  cooldownUntil = Date.now() + COOLDOWN_MS;
+  await persistState();
+
+  await Storage.savePendingVisit(visit);
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `✈️ Drop-off at ${zone.name}`,
+      body: `${Math.round(durationMin)} min · £${actualFee.toFixed(2)} — Did you drop off passengers?`,
+      sound: true,
+      data: { type: 'dropoff_pending' },
+      categoryIdentifier: 'dropoff_confirm',
+    },
+    trigger: { type: 'timeInterval', seconds: 1, repeats: false } as unknown as null,
+  });
+
+  if (dropoffCallback) dropoffCallback(visit);
+}
+
 // ─── Core location handler ────────────────────────────────────────────────────
 
-async function handleLocation(coords: { latitude: number; longitude: number }): Promise<void> {
+async function handleLocation(coords: Location.LocationObjectCoords): Promise<void> {
   await loadPersistedState();
 
-  lastKnownLocation = { latitude: coords.latitude, longitude: coords.longitude, timestamp: Date.now() };
-
+  const { latitude: lat, longitude: lng, speed } = coords;
   const now = Date.now();
 
-  // CCZ daily charge check
-  const cczDist = haversineKm(coords.latitude, coords.longitude, CCZ_ZONE.lat, CCZ_ZONE.lng);
-  const insideCCZ = cczDist <= CCZ_ZONE.radiusKm;
+  lastKnownLocation = { latitude: lat, longitude: lng, timestamp: now };
+
+  // ── CCZ daily charge check ─────────────────────────────────────────────────
+  const insideCCZ = haversineKm(lat, lng, CCZ_ZONE.lat, CCZ_ZONE.lng) <= CCZ_ZONE.radiusKm;
   if (insideCCZ && !cczIsInside) {
     cczIsInside = true;
     console.log('[CCZ] Entered zone');
-    handleCCZEntry(); // fire-and-forget; state is persisted inside
+    handleCCZEntry(); // fire-and-forget; persisted inside
   }
   if (!insideCCZ && cczIsInside) {
     cczIsInside = false;
     console.log('[CCZ] Exited zone');
   }
 
+  // ── Airport drop-off detection (3-point sequential) ───────────────────────
   if (now < cooldownUntil) return;
 
-  const zone = findZone(coords.latitude, coords.longitude);
-  const inside = zone !== null;
+  for (const zone of TERMINAL_ZONES) {
+    const s = getState(zone.id);
+    if (s.triggered) continue;
 
-  // Entering zone — start stability timer
-  if (inside && !isInsideZone) {
-    isInsideZone     = true;
-    currentZone      = zone;
-    entryCandidateAt = now;
-    exitCandidateAt  = null;
-    entryTime        = null;
-    console.log('[DROPOFF] Entered zone:', zone.name);
-    await persistState();
-  }
+    const dEntry = distM(lat, lng, zone.entry.lat, zone.entry.lng);
+    const dMid   = distM(lat, lng, zone.mid.lat,   zone.mid.lng);
+    const dExit  = distM(lat, lng, zone.exit.lat,  zone.exit.lng);
 
-  // Confirm entry after stability period
-  if (isInsideZone && entryTime === null && entryCandidateAt && now - entryCandidateAt >= STABILITY_MS) {
-    entryTime = entryCandidateAt;
-    entryLocation = lastKnownLocation ? { latitude: lastKnownLocation.latitude, longitude: lastKnownLocation.longitude } : null;
-    console.log('[DROPOFF] Entry confirmed:', currentZone?.name);
-    await persistState();
-  }
+    const inEntry = dEntry <= zone.entry.radiusM;
+    const inMid   = dMid   <= zone.mid.radiusM;
+    const inExit  = dExit  <= zone.exit.radiusM;
 
-  // Exiting zone — start exit stability timer
-  if (!inside && isInsideZone) {
-    if (!exitCandidateAt) {
-      exitCandidateAt = now;
-      console.log('[DROPOFF] Exited zone:', currentZone?.name);
-      await persistState();
+    // Step 1 — Confirm entry zone
+    if (inEntry && !s.passedEntry) {
+      s.passedEntry = true;
+      console.log(`[DROPOFF] → Entry: ${zone.name}`);
     }
 
-    if (now - exitCandidateAt >= STABILITY_MS) {
-      const exitT  = exitCandidateAt;
-      const entryT = entryTime;
-      const z      = currentZone;
-
-      // Reset state before async work
-      isInsideZone     = false;
-      currentZone      = null;
-      entryTime        = null;
-      entryCandidateAt = null;
-      exitCandidateAt  = null;
-      cooldownUntil    = now + COOLDOWN_MS;
-      await persistState();
-
-      if (!entryT || !z) {
-        console.log('[DROPOFF] No confirmed entry — ignoring');
-        return;
+    // Step 2 — Enter mid zone (only counts if entry was seen first)
+    if (inMid && s.passedEntry && !s.inMid && !s.passedMid) {
+      // Speed check: if moving fast, it's just a pass-through — skip
+      if (speed !== null && speed !== undefined && speed > MAX_SPEED_MS) {
+        console.log(`[DROPOFF] Too fast at mid (${(speed * 3.6).toFixed(0)} km/h) — ${zone.name}`);
+        resetState(zone.id);
+        continue;
       }
+      s.inMid = true;
+      s.midEntryTime = now;
+      console.log(`[DROPOFF] → Mid (drop-off lane): ${zone.name}`);
+    }
 
-      const durationMin = (exitT - entryT) / 60_000;
-      console.log('[DROPOFF] Duration:', durationMin.toFixed(1), 'min');
+    // Step 3 — Left mid zone
+    if (!inMid && s.inMid && s.midEntryTime !== null) {
+      s.inMid = false;
+      s.passedMid = true;
+      const midExitTime = now;
+      const durationMin = (midExitTime - s.midEntryTime) / 60_000;
+
+      console.log(`[DROPOFF] ← Left mid: ${zone.name} · ${durationMin.toFixed(1)} min`);
 
       if (durationMin < 2) {
-        console.log('[DROPOFF] Visit too short — ignoring');
-        return;
+        console.log(`[DROPOFF] Too short (${durationMin.toFixed(1)} min) — ignoring`);
+        resetState(zone.id);
+        continue;
       }
       if (durationMin > 30) {
-        console.log('[DROPOFF] Likely parked (>30min) — ignoring');
-        return;
+        console.log(`[DROPOFF] Likely parked (${durationMin.toFixed(1)} min) — ignoring`);
+        resetState(zone.id);
+        continue;
       }
 
-      console.log('[DROPOFF] Valid drop-off detected:', z.name);
+      // Valid duration — trigger drop-off
+      s.triggered = true;
+      await triggerDropoff(zone, s.midEntryTime, midExitTime);
 
-      // Duration'a göre gerçek ücreti hesapla
-      const actualFee = calculateAirportFee(z.id, z.fee, durationMin);
-      console.log('[DROPOFF] Fee:', actualFee.toFixed(2), `(${durationMin.toFixed(1)} min)`);
+      // Reset all terminal states after triggering (cooldown handles duplicates)
+      for (const id of termStates.keys()) resetState(id);
+      break;
+    }
 
-      const visit: DropoffVisit = {
-        zoneId: z.id,
-        zoneName: z.name,
-        fee: actualFee,
-        penaltyFee: z.penaltyFee,
-        payUrl: z.payUrl,
-        entryTime: entryT,
-        exitTime: exitT,
-        durationMin,
-      };
-
-      // Always persist + notify — works even when app is closed
-      await Storage.savePendingVisit(visit);
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `✈️ Drop-off at ${z.name}`,
-          body: `${Math.round(durationMin)} min · £${actualFee.toFixed(2)} — Did you drop off passengers?`,
-          sound: true,
-          data: { type: 'dropoff_pending' },
-          categoryIdentifier: 'dropoff_confirm',
-        },
-        trigger: { type: 'timeInterval', seconds: 1, repeats: false } as unknown as null,
-      });
-
-      // If app is in foreground, show confirmation popup immediately
-      if (dropoffCallback) {
-        dropoffCallback(visit);
+    // Bonus: exit zone reached after mid — also trigger if somehow not already done
+    if (inExit && s.passedMid && !s.triggered && s.midEntryTime !== null) {
+      const durationMin = (now - s.midEntryTime) / 60_000;
+      if (durationMin >= 2 && durationMin <= 30) {
+        s.triggered = true;
+        await triggerDropoff(zone, s.midEntryTime, now);
+        for (const id of termStates.keys()) resetState(id);
+        break;
       }
     }
-  }
 
-  // Re-entered zone before exit timer expired — cancel exit
-  if (inside && exitCandidateAt) {
-    exitCandidateAt = null;
-    console.log('[DROPOFF] Re-entered zone, exit cancelled');
+    // Safety reset: if entry was seen >45 min ago but mid never triggered,
+    // the driver is probably just parked nearby — clear stale state
+    if (s.passedEntry && !s.passedMid && s.midEntryTime === null) {
+      // No timer tracked yet — passedEntry alone doesn't expire
+      // (handled by cooldown + natural state reset above)
+    }
   }
 }
 
-// ─── Zone lookup ──────────────────────────────────────────────────────────────
-
-// Duration'a göre gerçek havalimanı ücretini hesapla
-function calculateAirportFee(zoneId: string, baseFee: number, durationMin: number): number {
-  // Heathrow — flat £7 per entry
-  if (zoneId.startsWith('heathrow')) return baseFee;
-
-  // Stansted — 0-15dk: £10, 15-30dk: £28
-  if (zoneId === 'stansted') return durationMin <= 15 ? 10 : 28;
-
-  // Luton — 0-10dk: £7, sonra +£1/dk
-  if (zoneId === 'luton') return durationMin <= 10 ? 7 : 7 + Math.ceil(durationMin - 10);
-
-  // Gatwick — 0-10dk: £10, sonra +£1/dk
-  if (zoneId.startsWith('gatwick')) return durationMin <= 10 ? 10 : 10 + Math.ceil(durationMin - 10);
-
-  // London City — 0-5dk: £8, sonra +£1/dk
-  if (zoneId === 'london_city') return durationMin <= 5 ? 8 : 8 + Math.ceil(durationMin - 5);
-
-  return baseFee;
-}
-
-function findZone(lat: number, lon: number): DetectionZone | null {
-  for (const zone of DETECTION_ZONES) {
-    // Use polygon if defined (more accurate), else fall back to radius
-    const inside = zone.polygon
-      ? pointInPolygon(lat, lon, zone.polygon)
-      : haversineKm(lat, lon, zone.lat, zone.lng) <= zone.radiusKm;
-    if (inside) return zone;
-  }
-  return null;
-}
-
-// ─── Self-learning data capture ──────────────────────────────────────────────
+// ─── Self-learning data capture ───────────────────────────────────────────────
 
 async function captureDropoffPoint(visit: DropoffVisit): Promise<void> {
   if (!lastKnownLocation) return;
   if (visit.durationMin < 2 || visit.durationMin > 15) return;
-
   const [airport, terminal] = parseZoneId(visit.zoneId);
   await saveDropoffPoint({
     lat: lastKnownLocation.latitude,
@@ -342,8 +367,6 @@ async function captureDropoffPoint(visit: DropoffVisit): Promise<void> {
     terminal,
     duration: Math.round(visit.durationMin),
     timestamp: new Date().toISOString(),
-    entryLat: entryLocation?.latitude,
-    entryLng: entryLocation?.longitude,
   });
   console.log('[LEARN] Dropoff point saved:', airport, terminal);
 }
@@ -376,8 +399,7 @@ export async function confirmDropoff(visit: DropoffVisit): Promise<void> {
     });
     await Storage.saveCharges(charges);
 
-    const unpaid = charges.filter(c => !c.paid).length;
-    await Notifications.setBadgeCountAsync(unpaid);
+    await Notifications.setBadgeCountAsync(charges.filter(c => !c.paid).length);
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `✈️ ${visit.zoneName}`,
@@ -390,12 +412,11 @@ export async function confirmDropoff(visit: DropoffVisit): Promise<void> {
     try { await API.zoneEntry(user.plate, visit.zoneId); } catch { /* non-critical */ }
     console.log('[DROPOFF] Saved: £' + visit.fee);
   } catch (e) {
-    console.log('[DROPOFF] save error:', e);
+    console.log('[DROPOFF] confirmDropoff error:', e);
   }
 }
 
 export function discardDropoff(): void {
-  // Reset cooldown so the zone can be re-detected if the user drives through again
   cooldownUntil = 0;
   persistState().catch(() => {});
   console.log('[DROPOFF] Discarded, cooldown reset');
@@ -407,9 +428,7 @@ let subscription: Location.LocationSubscription | null = null;
 
 export const DropoffService = {
   start: async (): Promise<boolean> => {
-    // Load persisted state eagerly so cczChargedDate is available before first GPS update
     await loadPersistedState();
-
     try {
       const { status: fg } = await Location.requestForegroundPermissionsAsync();
       if (fg !== 'granted') return false;
@@ -429,7 +448,6 @@ export const DropoffService = {
           console.log('[DROPOFF] Background GPS started');
         }
       } else {
-        // Foreground-only fallback
         if (!subscription) {
           subscription = await Location.watchPositionAsync(
             { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 10, timeInterval: 5_000 },
@@ -441,7 +459,6 @@ export const DropoffService = {
       return true;
     } catch (e) {
       console.log('[DROPOFF] start error:', e);
-      // Last-resort foreground fallback
       try {
         if (!subscription) {
           subscription = await Location.watchPositionAsync(
@@ -467,7 +484,6 @@ export const DropoffService = {
     }
   },
 };
-
 
 // Re-export DropoffVisit so App.tsx can import it from one place
 export type { DropoffVisit };
