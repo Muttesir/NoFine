@@ -75,7 +75,7 @@ export default function OnboardingScreen({ onDone }: { onDone: () => void }) {
         {/* Logo */}
         <View style={s.logo}>
           <Text style={s.logoText}>NoFine</Text>
-          <Text style={s.logoSub}>Airport &amp; Charge Manager</Text>
+          <Text style={s.logoSub}>Know Before You Owe</Text>
         </View>
 
         {/* Step 1 */}

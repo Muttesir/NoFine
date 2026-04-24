@@ -107,7 +107,7 @@ export default function SettingsScreen({
           </TouchableOpacity>
         </View>
 
-        <Text style={s.version}>NoFine v1.0 · Airport Charge Manager</Text>
+        <Text style={s.version}>NoFine v1.0 · Know Before You Owe</Text>
       </ScrollView>
     </SafeAreaView>
   );
