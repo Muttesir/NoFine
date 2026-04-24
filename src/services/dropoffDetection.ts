@@ -48,9 +48,9 @@ Notifications.addNotificationResponseReceivedListener(async (response) => {
 const TEST_MODE   = false;
 const COOLDOWN_MS = TEST_MODE ? 5_000 : 600_000; // 10 min cooldown after a drop-off
 
-// Speed threshold: if GPS speed > 30 km/h (8.33 m/s) at the mid point,
-// the driver is just passing through — skip detection.
-const MAX_SPEED_MS = 8.33;
+// Speed threshold: if GPS speed >= 10 km/h (2.78 m/s) at the mid point,
+// the vehicle is moving — skip detection. Only < 10 km/h counts as a genuine stop.
+const MAX_SPEED_MS = 2.78;
 
 // ─── Per-terminal detection state (in-memory, resets on app restart) ──────────
 //
