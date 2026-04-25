@@ -8,7 +8,7 @@ import TrackingScreen from "./src/screens/TrackingScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import { COLORS } from "./src/services/api";
-import { DropoffService, onDropoffDetected, confirmDropoff, discardDropoff, DropoffVisit, getLastKnownLocation } from "./src/services/dropoffDetection";
+import { DropoffService, confirmDropoff, discardDropoff, DropoffVisit, getLastKnownLocation } from "./src/services/dropoffDetection";
 import { saveDropoffPoint, parseZoneId } from "./src/services/dropoffStorage";
 import { NotificationService, scheduleMidnightReminder, setupNotificationCategories } from "./src/services/notifications";
 import * as Notifications from "expo-notifications";
@@ -38,7 +38,7 @@ export default function App() {
         await NotificationService.requestPermission();
         await setupNotificationCategories();
         scheduleMidnightReminder();
-        onDropoffDetected((visit) => setPendingVisit(visit));
+        // Drop-off popup shown via AppState + checkPendingVisit (no foreground callback needed)
         await DropoffService.start();
       }
       await checkPendingVisit();

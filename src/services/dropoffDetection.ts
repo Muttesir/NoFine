@@ -99,8 +99,6 @@ let cczIsInside    = false;
 let cczChargedDate: string | null = null;
 let stateLoaded    = false;
 
-let dropoffCallback: ((visit: DropoffVisit) => void) | null = null;
-
 // Last known location (for self-learning data capture)
 interface Coords { latitude: number; longitude: number; timestamp: number; }
 let lastKnownLocation: Coords | null = null;
@@ -246,7 +244,8 @@ async function triggerDropoff(zone: TerminalZone, midEntryTime: number, midExitT
     trigger: { type: 'timeInterval', seconds: 1, repeats: false } as unknown as null,
   });
 
-  if (dropoffCallback) dropoffCallback(visit);
+  // NOTE: No React callback here — background task must not update React state.
+  // App shows popup via AppState 'active' listener (checkPendingVisit) in App.tsx.
 }
 
 // ─── Core location handler ────────────────────────────────────────────────────
@@ -373,10 +372,6 @@ async function captureDropoffPoint(visit: DropoffVisit): Promise<void> {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function onDropoffDetected(cb: (visit: DropoffVisit) => void): void {
-  dropoffCallback = cb;
-}
-
 export async function confirmDropoff(visit: DropoffVisit): Promise<void> {
   try {
     const user = await Storage.getUser();
@@ -439,9 +434,11 @@ export const DropoffService = {
         const running = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_TASK).catch(() => false);
         if (!running) {
           await Location.startLocationUpdatesAsync(BACKGROUND_TASK, {
-            accuracy: Location.Accuracy.BestForNavigation,
-            distanceInterval: 10,
-            timeInterval: 5_000,
+            // High accuracy (not BestForNavigation) — sufficient for 30–60m radius zones,
+            // avoids conflicts with Uber/Waze/Maps and reduces battery drain
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 15,
+            timeInterval: 8_000,
             showsBackgroundLocationIndicator: true,
             pausesUpdatesAutomatically: false,
           });
@@ -450,7 +447,7 @@ export const DropoffService = {
       } else {
         if (!subscription) {
           subscription = await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 10, timeInterval: 5_000 },
+            { accuracy: Location.Accuracy.High, distanceInterval: 15, timeInterval: 8_000 },
             loc => handleLocation(loc.coords),
           );
           console.log('[DROPOFF] Foreground GPS started');
@@ -462,7 +459,7 @@ export const DropoffService = {
       try {
         if (!subscription) {
           subscription = await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 10, timeInterval: 5_000 },
+            { accuracy: Location.Accuracy.High, distanceInterval: 15, timeInterval: 8_000 },
             loc => handleLocation(loc.coords),
           );
           console.log('[DROPOFF] Fallback foreground GPS started');
