@@ -13,7 +13,7 @@ export interface GeoPoint {
 export interface TerminalZone {
   id: string;
   name: string;
-  level: 'Ground' | 'Upper'; // Upper = viyadük (Departures forecourt)
+  level: 'Ground' | 'Upper'; // Upper = elevated viaduct (Departures forecourt)
   fee: number;
   penaltyFee: number;
   payUrl: string;
@@ -85,7 +85,7 @@ export function shouldCharge(zoneId: string): boolean {
 // Detection logic (dropoffDetection.ts):
 //   entry zone → mid zone (stop 2–30 min) → exit zone  =  confirmed drop-off
 //
-// Heathrow T2/T3/T5: Upper level (Departures viyadük, ~7m above ground).
+// Heathrow T2/T3/T5: Upper level (Departures viaduct, ~7m above ground).
 // Heathrow T4, Luton, Stansted, London City: Ground level.
 // Gatwick North/South: Upper level (Departures forecourt).
 //
