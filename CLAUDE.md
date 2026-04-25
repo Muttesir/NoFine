@@ -249,10 +249,12 @@ Xcode → Any iOS Device (arm64) → Product → Archive
 → Distribute App → App Store Connect → Upload
 ```
 
-**App Store / TestFlight (cloud build):**
+**App Store / TestFlight (cloud build) — preferred for testing:**
 ```bash
 eas build --platform ios --profile production --auto-submit
 ```
+
+> All testing is done via TestFlight. Do not test on local builds unless debugging a device-specific issue.
 
 **Backend deploy:**
 Railway auto-deploys on push to GitHub main.
