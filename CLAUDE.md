@@ -3,6 +3,9 @@
 App for PCO (Private Hire) drivers to manage airport drop-off charges and London congestion zones.
 Automatic GPS detection, push notifications, and payment tracking.
 
+**Language:** All code, comments, commit messages, and documentation must be written in English.
+The user communicates in Turkish — responses and clarifications may be in Turkish, but all code output must be English.
+
 ---
 
 ## Long-Term Goal
