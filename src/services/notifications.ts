@@ -36,27 +36,4 @@ export const NotificationService = {
   },
 };
 
-const MIDNIGHT_REMINDER_ID = 'nofine-midnight-reminder';
-
-export const scheduleMidnightReminder = async () => {
-  // Cancel only the midnight reminder — do NOT cancel all notifications
-  // (would kill pending drop-off notifications too)
-  await Notifications.cancelScheduledNotificationAsync(MIDNIGHT_REMINDER_ID).catch(() => {});
-
-  const tonight = new Date();
-  tonight.setHours(23, 0, 0, 0);
-  if (new Date() >= tonight) {
-    tonight.setDate(tonight.getDate() + 1);
-  }
-  const seconds = Math.floor((tonight.getTime() - Date.now()) / 1000);
-  await Notifications.scheduleNotificationAsync({
-    identifier: MIDNIGHT_REMINDER_ID,
-    content: {
-      title: '⏰ 1 hour to midnight!',
-      body: 'Did you visit an airport today? Pay now to avoid a fine!',
-      sound: true,
-    },
-    trigger: { type: 'timeInterval', seconds, repeats: false } as any,
-  });
-};
 
