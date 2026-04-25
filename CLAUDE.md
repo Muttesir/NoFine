@@ -258,6 +258,72 @@ Railway otomatik deploy eder — GitHub main'e push yeterli.
 
 ---
 
+## Test
+
+> ⚠️ Şu an hiç test yok — ne test dosyası ne de framework kurulu. Gerçek dünya testi önce, unit testler sonra.
+
+### 🧪 Unit Testler (Yapılacak)
+
+**Framework:** Jest + `@testing-library/react-native` kurulacak
+
+#### `calculateAirportFee` — Fee hesaplama
+| Senaryo | Girdi | Beklenen |
+|---|---|---|
+| Heathrow flat fee | `heathrow_t2`, 5 dk | £7 |
+| Heathrow flat fee | `heathrow_t5`, 12 dk | £7 |
+| Stansted ≤15 dk | `stansted`, 10 dk | £10 |
+| Stansted >15 dk | `stansted`, 20 dk | £28 |
+| Luton ≤10 dk | `luton`, 8 dk | £7 |
+| Luton >10 dk | `luton`, 14 dk | £11 (£7 + 4dk) |
+| Gatwick ≤10 dk | `gatwick_north`, 7 dk | £10 |
+| Gatwick >10 dk | `gatwick_south`, 15 dk | £15 (£10 + 5dk) |
+| London City ≤5 dk | `london_city`, 4 dk | £8 |
+| London City >5 dk | `london_city`, 9 dk | £12 (£8 + 4dk) |
+
+#### 3-Nokta GPS Akışı — `handleLocation`
+| Senaryo | Adımlar | Beklenen |
+|---|---|---|
+| Normal drop-off | entry → mid (3 dk dur) → exit | `triggerDropoff` çağrılır |
+| Çok hızlı geçiş | mid'e speed > 2.78 m/s ile gir | resetState, trigger yok |
+| Çok kısa bekleme | mid'de < 2 dk kal | resetState, trigger yok |
+| Çok uzun bekleme | mid'de > 30 dk kal | resetState, trigger yok |
+| Entry olmadan mid | entry geçilmeden mid'e gir | trigger yok |
+| Speed null | speed=null ile mid'e gir | filtre atlanır, mid sayılır |
+| Cooldown aktif | trigger sonrası 10 dk içinde tekrar gir | trigger yok |
+
+#### CCZ Günlük Ücret
+| Senaryo | Durum | Beklenen |
+|---|---|---|
+| İlk giriş, aktif saat | Pzt 10:00, bugün ödenmedi | £15 charge + bildirim |
+| Aynı gün ikinci giriş | bugün zaten ödendi | hiçbir şey olmaz |
+| Aktif saat dışı giriş | Pzt 06:00 veya 20:00 | hiçbir şey olmaz |
+| Hafta sonu Pazar | Pazar 10:00 | hiçbir şey olmaz |
+
+#### `captureDropoffPoint` — Veri filtreleme
+| Senaryo | Beklenen |
+|---|---|
+| 2–15 dk arası drop-off | kayıt yapılır |
+| < 2 dk drop-off | kayıt yapılmaz |
+| > 15 dk drop-off | kayıt yapılmaz |
+| `lastKnownLocation` null | kayıt yapılmaz |
+
+---
+
+### 📍 Gerçek Dünya Testleri (Manuel)
+
+Havalimanına gidince kontrol edilecekler:
+
+- [ ] Entry zone'a girilince log çıkıyor mu? (`[DROPOFF] → Entry`)
+- [ ] Mid zone'da yavaşlayınca log çıkıyor mu? (`[DROPOFF] → Mid`)
+- [ ] Mid zone'dan çıkınca bildirim geliyor mu?
+- [ ] "YES" basınca charge HomeScreen'de görünüyor mu?
+- [ ] "NO" basınca hiçbir şey kaydedilmiyor mu?
+- [ ] App kapalıyken "YES" basınca çalışıyor mu? (background action)
+- [ ] 10 dk cooldown sonrası tekrar algılıyor mu?
+- [ ] Speed > 6 mph ile geçince bildirim gelmiyor mu?
+
+---
+
 ## Önemli Notlar
 
 - **GPS sistemi 3-nokta modeline geçildi** (Nisan 2026) — eski polygon/`DETECTION_ZONES` sistemi tamamen kaldırıldı.
