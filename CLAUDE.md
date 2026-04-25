@@ -5,6 +5,27 @@ GPS ile otomatik algılama, bildirim ve ödeme takibi yapar.
 
 ---
 
+## Uzun Vadeli Hedef
+
+NoFine'ın amacı, sürücülerin havalimanı drop-off ücretlerini unutarak ceza almalarını önlemek için kullanıcı davranışına dayalı akıllı bir sistem geliştirmektir.
+
+Uygulama, GPS verisi ve kullanıcı onayı ("YES") ile gerçek drop-off noktalarını tespit eder ve bu verileri zaman içinde toplayarak kendi konum doğruluğunu sürekli iyileştirir — **self-learning location intelligence system**.
+
+---
+
+## Eklenecek Modüller
+
+| Modül | Durum | Açıklama |
+|---|---|---|
+| 📍 Drop-off veri toplama | ✅ Kısmen hazır | `dropoffStorage.ts` + `captureDropoffPoint()` — kullanıcı "YES" deyince GPS noktası AsyncStorage'a kaydediliyor |
+| ☁️ Backend senkronizasyonu | ⏳ Bekliyor | Toplanan noktaları Railway'e gönder — veri toplama stabil olunca eklenecek |
+| 🧹 Veri temizleme / outlier filtering | ⏳ Bekliyor | Anormal noktaları filtrele, tutarlı veriyi seç |
+| 🧠 Clustering algoritması | ⏳ Bekliyor | Gelen noktaları analiz edip zone merkezi ve yarıçapını otomatik hesapla |
+| 📐 Otomatik zone güncelleme | ⏳ Bekliyor | Cluster sonuçlarına göre `zones.ts` koordinatlarını güncelle |
+| 📊 Harita / debug görünümü | ⏳ Bekliyor | Toplanan noktaları ve mevcut zone'ları haritada göster |
+
+---
+
 ## Tech Stack
 
 | Katman | Teknoloji |
