@@ -245,6 +245,6 @@ Railway otomatik deploy eder — GitHub main'e push yeterli.
 - ULEZ detection aktif değil, sadece onboarding'de compliance check var.
 - CCZ `cczChargedDate` `nf_gps_state`'e persist ediliyor — app restart'ta kaybolmaz.
 - Terminal state'leri (entry/mid geçişleri) in-memory — app restart'ta sıfırlanır, bu kasıtlı bir tercih.
-- Gece 23:00 bildirim (`scheduleMidnightReminder`) her gün çalışıyor — trip olmasa da. İleride koşullu yapılacak.
+- Gece 23:00 bildirimi (`scheduleMidnightReminder`) **kaldırıldı** (Nisan 2026) — her gece tetikleniyordu, trip olmasa da. İleride koşullu yapılacak: o gün ödenmemiş charge varsa ve gece yarısı deadline'ı yaklaşıyorsa 23:00'de hatırlatma gönder. `Storage.getCharges()` → `filter(c => !c.paid)` → boş değilse bildirim planla.
 - Railway backend Nisan 2026 sonu free plan bitiyor — Hobby $5/ay'a geçilecek veya Supabase+Vercel'e migrate.
 - Speed filtresi: mid noktasında `speed > 8.33 m/s` (30 km/h) → drop-off sayılmaz, araç geçiyordur.
