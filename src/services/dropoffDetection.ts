@@ -48,8 +48,8 @@ Notifications.addNotificationResponseReceivedListener(async (response) => {
 const TEST_MODE   = false;
 const COOLDOWN_MS = TEST_MODE ? 5_000 : 600_000; // 10 min cooldown after a drop-off
 
-// Speed threshold: if GPS speed >= 10 km/h (2.78 m/s) at the mid point,
-// the vehicle is moving — skip detection. Only < 10 km/h counts as a genuine stop.
+// Speed threshold: if GPS speed >= 6 mph (2.78 m/s) at the mid point,
+// the vehicle is moving — skip detection. Only < 6 mph counts as a genuine stop.
 const MAX_SPEED_MS = 2.78;
 
 // ─── Per-terminal detection state (in-memory, resets on app restart) ──────────
@@ -295,7 +295,7 @@ async function handleLocation(coords: Location.LocationObjectCoords): Promise<vo
     if (inMid && s.passedEntry && !s.inMid && !s.passedMid) {
       // Speed check: if moving fast, it's just a pass-through — skip
       if (speed !== null && speed !== undefined && speed > MAX_SPEED_MS) {
-        console.log(`[DROPOFF] Too fast at mid (${(speed * 3.6).toFixed(0)} km/h) — ${zone.name}`);
+        console.log(`[DROPOFF] Too fast at mid (${(speed * 2.237).toFixed(1)} mph) — ${zone.name}`);
         resetState(zone.id);
         continue;
       }
